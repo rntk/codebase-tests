@@ -36,7 +36,7 @@ func (h *TestsHandler) RegisterRoutes(r chi.Router) {
 
 // List returns the test tree.
 func (h *TestsHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathParam(chi.URLParam(r, "id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -53,8 +53,8 @@ func (h *TestsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a single test with detail.
 func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	testID := chi.URLParam(r, "testId")
+	id := pathParam(chi.URLParam(r, "id"))
+	testID := pathParam(chi.URLParam(r, "testId"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

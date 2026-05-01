@@ -43,7 +43,7 @@ type FileNode struct {
 
 // List walks the project directory and returns a file tree.
 func (h *FilesHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathParam(chi.URLParam(r, "id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

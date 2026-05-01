@@ -46,7 +46,7 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a single project.
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathParam(chi.URLParam(r, "id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

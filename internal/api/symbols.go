@@ -35,7 +35,7 @@ func (h *SymbolsHandler) RegisterRoutes(r chi.Router) {
 
 // List returns the function tree with coverage annotations.
 func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathParam(chi.URLParam(r, "id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

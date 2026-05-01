@@ -194,6 +194,16 @@ function goldenLookupKey(testId: string, caseId: string): string {
   return `${testId}:${caseId}`
 }
 
+function decodePathValue(value: string): string {
+  let decoded = value
+  for (let i = 0; i < 2; i += 1) {
+    const next = decodeURIComponent(decoded)
+    if (next === decoded) return decoded
+    decoded = next
+  }
+  return decoded
+}
+
 export function getMockResponse<T>(path: string): T | undefined {
   if (path === '/api/projects') return [project] as T
   if (path === `/api/projects/${project.id}`) return project as T
@@ -207,7 +217,7 @@ export function getMockResponse<T>(path: string): T | undefined {
     new RegExp(`/api/projects/${project.id}/tests/(.+)/golden/([^/]+)/diff$`)
   )
   if (goldenDiffMatch) {
-    const key = goldenLookupKey(decodeURIComponent(goldenDiffMatch[1]), decodeURIComponent(goldenDiffMatch[2]))
+    const key = goldenLookupKey(decodePathValue(goldenDiffMatch[1]), decodePathValue(goldenDiffMatch[2]))
     const diff = goldenDiffs[key]
     if (diff) return diff as T
   }
@@ -216,7 +226,7 @@ export function getMockResponse<T>(path: string): T | undefined {
     new RegExp(`/api/projects/${project.id}/tests/(.+)/golden/([^/]+)$`)
   )
   if (goldenContentMatch) {
-    const key = goldenLookupKey(decodeURIComponent(goldenContentMatch[1]), decodeURIComponent(goldenContentMatch[2]))
+    const key = goldenLookupKey(decodePathValue(goldenContentMatch[1]), decodePathValue(goldenContentMatch[2]))
     const content = goldenContents[key]
     if (content) return content as T
   }
@@ -225,7 +235,7 @@ export function getMockResponse<T>(path: string): T | undefined {
     new RegExp(`/api/projects/${project.id}/tests/(.+)/golden$`)
   )
   if (goldenListMatch) {
-    const testId = decodeURIComponent(goldenListMatch[1])
+    const testId = decodePathValue(goldenListMatch[1])
     const cases = goldenCases[testId]
     if (cases) return cases as T
   }
@@ -235,7 +245,7 @@ export function getMockResponse<T>(path: string): T | undefined {
     new RegExp(`/api/projects/${project.id}/tests/(.+)$`)
   )
   if (testMatch) {
-    const testId = decodeURIComponent(testMatch[1])
+    const testId = decodePathValue(testMatch[1])
     const t = tests.find((x) => x.id === testId)
     if (t) return t as T
   }

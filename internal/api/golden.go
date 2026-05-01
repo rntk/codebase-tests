@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/go-chi/chi/v5"
@@ -36,7 +35,7 @@ func (h *GoldenHandler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *GoldenHandler) getProject(w http.ResponseWriter, r *http.Request) *project.Project {
-	id := chi.URLParam(r, "id")
+	id := pathParam(chi.URLParam(r, "id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -51,7 +50,7 @@ func (h *GoldenHandler) ListCases(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId, _ := url.PathUnescape(chi.URLParam(r, "testId"))
+	testId := pathParam(chi.URLParam(r, "testId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)
@@ -68,8 +67,8 @@ func (h *GoldenHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId, _ := url.PathUnescape(chi.URLParam(r, "testId"))
-	caseId, _ := url.PathUnescape(chi.URLParam(r, "caseId"))
+	testId := pathParam(chi.URLParam(r, "testId"))
+	caseId := pathParam(chi.URLParam(r, "caseId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)
@@ -132,8 +131,8 @@ func (h *GoldenHandler) DiffCase(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId, _ := url.PathUnescape(chi.URLParam(r, "testId"))
-	caseId, _ := url.PathUnescape(chi.URLParam(r, "caseId"))
+	testId := pathParam(chi.URLParam(r, "testId"))
+	caseId := pathParam(chi.URLParam(r, "caseId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)

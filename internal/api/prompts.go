@@ -53,8 +53,8 @@ type PromptResponse struct {
 
 // ForSymbol returns the right prompt for a function symbol.
 func (h *PromptsHandler) ForSymbol(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-	symbolID := chi.URLParam(r, "symbolId")
+	projectID := pathParam(chi.URLParam(r, "id"))
+	symbolID := pathParam(chi.URLParam(r, "symbolId"))
 	p, ok := h.store[projectID]
 	if !ok {
 		http.Error(w, "project not found", http.StatusNotFound)
@@ -136,8 +136,8 @@ func (h *PromptsHandler) ForSymbol(w http.ResponseWriter, r *http.Request) {
 
 // ForTest returns a transform prompt for an existing test function.
 func (h *PromptsHandler) ForTest(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-	testID := chi.URLParam(r, "testId")
+	projectID := pathParam(chi.URLParam(r, "id"))
+	testID := pathParam(chi.URLParam(r, "testId"))
 	p, ok := h.store[projectID]
 	if !ok {
 		http.Error(w, "project not found", http.StatusNotFound)
