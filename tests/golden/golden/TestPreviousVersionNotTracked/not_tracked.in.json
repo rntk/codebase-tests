@@ -1,0 +1,13 @@
+{
+  "git": {
+    "userEmail": "test@test.com",
+    "userName": "Test"
+  },
+  "files": [
+    {
+      "path": "file.txt",
+      "content": "content"
+    }
+  ],
+  "path": "file.txt"
+}
