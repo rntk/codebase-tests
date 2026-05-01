@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "sample-go",
+  "plugins": [
+    "go"
+  ],
+  "goldenRoot": "tests/golden",
+  "toolTimeoutSeconds": 30
+}

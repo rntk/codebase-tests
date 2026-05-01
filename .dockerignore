@@ -1,0 +1,10 @@
+.git
+.github
+dockerfiles
+review-server
+web/node_modules
+web/dist
+node_modules
+coverage
+tmp
+*.log

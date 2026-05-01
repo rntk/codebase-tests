@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1.7
+
+ARG GO_VERSION=1.25
+ARG GOPLS_VERSION=v0.21.1
+
+FROM golang:${GO_VERSION}-bookworm
+ARG GOPLS_VERSION
+
+RUN GOBIN=/usr/local/bin go install golang.org/x/tools/gopls@${GOPLS_VERSION}
+
+WORKDIR /workspace
+
+EXPOSE 37374
+
+ENTRYPOINT ["gopls"]
+CMD ["serve", "-listen=:37374"]

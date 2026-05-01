@@ -1,0 +1,29 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: dockerfiles/Dockerfile
+    command: ["-project", "/workspace", "-plugins", "go"]
+    environment:
+      REVIEW_SERVER_ADDR: ":8080"
+      REVIEW_SERVER_STATIC_DIR: /opt/review-server/web/dist
+    ports:
+      - "8080:8080"
+    volumes:
+      - ..:/workspace
+    depends_on:
+      - lsp-go
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"ok\" <&3'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lsp-go:
+    build:
+      context: ..
+      dockerfile: dockerfiles/Dockerfile.gopls
+    ports:
+      - "37374:37374"
+    volumes:
+      - ..:/workspace:ro

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "sample-python",
+  "plugins": [
+    "python"
+  ],
+  "goldenRoot": "tests/golden",
+  "toolTimeoutSeconds": 30
+}
