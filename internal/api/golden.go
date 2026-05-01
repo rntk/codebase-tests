@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/golden"
 	"github.com/review-server/internal/plugin"
 	"github.com/review-server/internal/project"
@@ -28,14 +27,14 @@ func (h *GoldenHandler) SetProject(p *project.Project) {
 }
 
 // RegisterRoutes wires golden file routes.
-func (h *GoldenHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects/{id}/tests/{testId}/golden", h.ListCases)
-	r.Get("/projects/{id}/tests/{testId}/golden/{caseId}", h.GetCase)
-	r.Get("/projects/{id}/tests/{testId}/golden/{caseId}/diff", h.DiffCase)
+func (h *GoldenHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden", h.ListCases)
+	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden/{caseId}", h.GetCase)
+	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden/{caseId}/diff", h.DiffCase)
 }
 
 func (h *GoldenHandler) getProject(w http.ResponseWriter, r *http.Request) *project.Project {
-	id := pathParam(chi.URLParam(r, "id"))
+	id := pathParam(r.PathValue("id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -50,7 +49,7 @@ func (h *GoldenHandler) ListCases(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId := pathParam(chi.URLParam(r, "testId"))
+	testId := pathParam(r.PathValue("testId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)
@@ -67,8 +66,8 @@ func (h *GoldenHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId := pathParam(chi.URLParam(r, "testId"))
-	caseId := pathParam(chi.URLParam(r, "caseId"))
+	testId := pathParam(r.PathValue("testId"))
+	caseId := pathParam(r.PathValue("caseId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)
@@ -131,8 +130,8 @@ func (h *GoldenHandler) DiffCase(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	testId := pathParam(chi.URLParam(r, "testId"))
-	caseId := pathParam(chi.URLParam(r, "caseId"))
+	testId := pathParam(r.PathValue("testId"))
+	caseId := pathParam(r.PathValue("caseId"))
 
 	conv := defaultConvention(p)
 	cases, err := golden.ResolveCases(p.Path, testId, conv)

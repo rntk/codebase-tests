@@ -1,15 +1,49 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGoldenCase, getGoldenDiff } from '../api/client.ts'
+import { getGoldenCase, getGoldenDiff, getTest } from '../api/client.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { DiffTree } from '../components/DiffTree.tsx'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
-import type { GoldenCaseContent } from '../api/types.ts'
+import type { GoldenCaseContent, TestFunc } from '../api/types.ts'
 
 function formatRawContent(value: unknown, emptyMessage: string): string {
   if (value === undefined) return emptyMessage
   return JSON.stringify(value, null, 2) ?? String(value)
+}
+
+function CodeBlock({ title, subtitle, code }: { title: string; subtitle?: string; code?: string }) {
+  return (
+    <div style={{ border: '1px solid #ddd', borderRadius: 4, overflow: 'hidden' }}>
+      <div
+        style={{
+          padding: '8px 12px',
+          background: '#f5f5f5',
+          borderBottom: '1px solid #ddd',
+          fontWeight: 600,
+          fontSize: 13,
+        }}
+      >
+        {title}
+        {subtitle && (
+          <span style={{ marginLeft: 8, color: '#777', fontWeight: 400 }}>
+            {subtitle}
+          </span>
+        )}
+      </div>
+      <pre
+        style={{
+          padding: 12,
+          margin: 0,
+          fontSize: 12,
+          overflow: 'auto',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {code || 'Source code is not available.'}
+      </pre>
+    </div>
+  )
 }
 
 export function DiffPage() {
@@ -33,6 +67,14 @@ export function DiffPage() {
     () => (rawMode ? getGoldenCase(projectId!, testId!, caseId!) : Promise.resolve(null as GoldenCaseContent | null)),
     [projectId, testId, caseId, rawMode]
   )
+  const {
+    data: test,
+    loading: testLoading,
+    error: testError,
+  } = useApi(
+    () => (rawMode ? getTest(projectId!, testId!) : Promise.resolve(null as TestFunc | null)),
+    [projectId, testId, rawMode]
+  )
 
   const isNoGit =
     (error?.message?.toLowerCase()?.includes('no git repo') ?? false) ||
@@ -41,6 +83,7 @@ export function DiffPage() {
   if (loading) return <LoadingState />
   if (error && !isNoGit) return <ErrorState error={error} />
   if (rawMode && contentError) return <ErrorState error={contentError} />
+  if (rawMode && testError) return <ErrorState error={testError} />
 
   const inDiff = data?.inDiff
   const outDiff = data?.outDiff
@@ -134,6 +177,48 @@ export function DiffPage() {
           </div>
         </div>
       </div>
+
+      {rawMode && (
+        <div
+          style={{
+            marginTop: 16,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 16,
+          }}
+        >
+          {testLoading ? (
+            <CodeBlock title="Test Code" code="Loading test code..." />
+          ) : (
+            <>
+              <CodeBlock
+                title={`Test Code: ${test?.name ?? testId}`}
+                subtitle={test ? `${test.file}:${test.line}` : undefined}
+                code={test?.sourceCode}
+              />
+              {test?.coveredFuncSources && test.coveredFuncSources.length > 0 ? (
+                test.coveredFuncSources.map((fn) => (
+                  <CodeBlock
+                    key={fn.id}
+                    title={`Function Code: ${fn.qualifiedName || fn.name}`}
+                    subtitle={`${fn.file}:${fn.line}`}
+                    code={fn.sourceCode}
+                  />
+                ))
+              ) : (
+                <CodeBlock
+                  title="Function Code"
+                  code={
+                    test?.coveredFuncs && test.coveredFuncs.length > 0
+                      ? `Source code is not available for:\n${test.coveredFuncs.join('\n')}`
+                      : 'No covered function was found for this test.'
+                  }
+                />
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

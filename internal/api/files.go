@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/project"
 )
 
@@ -29,8 +28,8 @@ func (h *FilesHandler) SetProject(p *project.Project) {
 }
 
 // RegisterRoutes wires file routes.
-func (h *FilesHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects/{id}/files", h.List)
+func (h *FilesHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects/{id}/files", h.List)
 }
 
 // FileNode is a node in the file tree.
@@ -43,7 +42,7 @@ type FileNode struct {
 
 // List walks the project directory and returns a file tree.
 func (h *FilesHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := pathParam(chi.URLParam(r, "id"))
+	id := pathParam(r.PathValue("id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

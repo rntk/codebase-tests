@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/plugin"
 	"github.com/review-server/internal/project"
 	"github.com/review-server/internal/tests"
@@ -29,13 +28,13 @@ func (h *SymbolsHandler) SetProject(p *project.Project) {
 }
 
 // RegisterRoutes wires symbol routes.
-func (h *SymbolsHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects/{id}/symbols", h.List)
+func (h *SymbolsHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects/{id}/symbols", h.List)
 }
 
 // List returns the function tree with coverage annotations.
 func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := pathParam(chi.URLParam(r, "id"))
+	id := pathParam(r.PathValue("id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

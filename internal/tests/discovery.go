@@ -23,6 +23,11 @@ func NewDiscovery(registry *plugin.Registry) *Discovery {
 	}
 }
 
+// Registry returns the plugin registry used by discovery.
+func (d *Discovery) Registry() *plugin.Registry {
+	return d.registry
+}
+
 // Invalidate clears the cache for a project.
 func (d *Discovery) Invalidate(projectPath string) {
 	d.mu.Lock()

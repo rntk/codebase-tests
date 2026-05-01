@@ -44,7 +44,21 @@ export interface TestFunc {
   package: string;
   subCases?: TestCase[];
   coveredFuncs?: string[];
+  sourceCode?: string;
+  coveredFuncSources?: SourceSnippet[];
   goldenCases?: GoldenCase[];
+}
+
+export interface SourceSnippet {
+  id: string;
+  name: string;
+  qualifiedName: string;
+  kind: string;
+  file: string;
+  line: number;
+  column: number;
+  package: string;
+  sourceCode?: string;
 }
 
 export interface TestCase {

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	"net/http"
+
 	"github.com/review-server/internal/api"
 	"github.com/review-server/internal/plugin"
 	"github.com/review-server/internal/project"
@@ -89,7 +90,7 @@ func main() {
 
 	configureDefaultStaticDir()
 
-	r := chi.NewRouter()
+	r := http.NewServeMux()
 	ph := api.NewProjectsHandler()
 	ph.RegisterRoutes(r)
 	ph.SetProject(p)

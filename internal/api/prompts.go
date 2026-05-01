@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/golden"
 	"github.com/review-server/internal/plugin"
 	"github.com/review-server/internal/project"
@@ -33,9 +32,9 @@ func NewPromptsHandler(reg *plugin.Registry, d *tests.Discovery) *PromptsHandler
 func (h *PromptsHandler) SetProject(p *project.Project) { registerProject(h.store, p) }
 
 // RegisterRoutes wires prompt routes.
-func (h *PromptsHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects/{id}/symbols/{symbolId}/test-prompt", h.ForSymbol)
-	r.Get("/projects/{id}/tests/{testId}/test-prompt", h.ForTest)
+func (h *PromptsHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects/{id}/symbols/{symbolId}/test-prompt", h.ForSymbol)
+	r.HandleFunc("GET /projects/{id}/tests/{testId}/test-prompt", h.ForTest)
 }
 
 // PromptResponse is the JSON body returned to the UI.
@@ -53,8 +52,8 @@ type PromptResponse struct {
 
 // ForSymbol returns the right prompt for a function symbol.
 func (h *PromptsHandler) ForSymbol(w http.ResponseWriter, r *http.Request) {
-	projectID := pathParam(chi.URLParam(r, "id"))
-	symbolID := pathParam(chi.URLParam(r, "symbolId"))
+	projectID := pathParam(r.PathValue("id"))
+	symbolID := pathParam(r.PathValue("symbolId"))
 	p, ok := h.store[projectID]
 	if !ok {
 		http.Error(w, "project not found", http.StatusNotFound)
@@ -136,8 +135,8 @@ func (h *PromptsHandler) ForSymbol(w http.ResponseWriter, r *http.Request) {
 
 // ForTest returns a transform prompt for an existing test function.
 func (h *PromptsHandler) ForTest(w http.ResponseWriter, r *http.Request) {
-	projectID := pathParam(chi.URLParam(r, "id"))
-	testID := pathParam(chi.URLParam(r, "testId"))
+	projectID := pathParam(r.PathValue("id"))
+	testID := pathParam(r.PathValue("testId"))
 	p, ok := h.store[projectID]
 	if !ok {
 		http.Error(w, "project not found", http.StatusNotFound)

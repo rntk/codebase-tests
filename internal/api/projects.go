@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/project"
 )
 
@@ -24,10 +23,10 @@ func (h *ProjectsHandler) SetProject(p *project.Project) {
 }
 
 // RegisterRoutes wires project routes.
-func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects", h.List)
-	r.Post("/projects", h.Create)
-	r.Get("/projects/{id}", h.Get)
+func (h *ProjectsHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects", h.List)
+	r.HandleFunc("POST /projects", h.Create)
+	r.HandleFunc("GET /projects/{id}", h.Get)
 }
 
 // List returns registered projects.
@@ -46,7 +45,7 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a single project.
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id := pathParam(chi.URLParam(r, "id"))
+	id := pathParam(r.PathValue("id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)

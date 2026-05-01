@@ -9,44 +9,34 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 )
 
 // Server is the HTTP server for a project.
 type Server struct {
-	router *chi.Mux
+	router http.Handler
 	http   *http.Server
 }
 
 // NewServer creates a new API server with all routes wired.
 func NewServer(handler http.Handler) *Server {
-	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"http://localhost:*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
-	}))
+	mux := http.NewServeMux()
 
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	r.Mount("/api", handler)
+	mux.Handle("/api/", http.StripPrefix("/api", handler))
 
 	if staticDir := os.Getenv("REVIEW_SERVER_STATIC_DIR"); staticDir != "" {
-		r.Get("/*", spaHandler(staticDir))
+		mux.HandleFunc("/", spaHandler(staticDir))
 	}
 
 	return &Server{
-		router: r,
+		router: corsMiddleware(loggerMiddleware(recovererMiddleware(mux))),
 	}
 }
 
@@ -98,4 +88,39 @@ func WaitForInterrupt() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
+}
+
+func loggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s", r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func recovererMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic: %v", rec)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if strings.HasPrefix(origin, "http://localhost") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -1,18 +1,20 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
-import { getGoldenCase, getGoldenDiff } from '../api/client.ts'
+import { getGoldenCase, getGoldenDiff, getTest } from '../api/client.ts'
 import { DiffPage } from '../pages/DiffPage.tsx'
 
 vi.mock('../api/client.ts', () => ({
   getGoldenDiff: vi.fn(),
   getGoldenCase: vi.fn(),
+  getTest: vi.fn(),
 }))
 
 describe('DiffPage', () => {
   beforeEach(() => {
     vi.mocked(getGoldenDiff).mockReset()
     vi.mocked(getGoldenCase).mockReset()
+    vi.mocked(getTest).mockReset()
   })
 
   it('loads current golden content for raw mode', async () => {
@@ -33,6 +35,29 @@ describe('DiffPage', () => {
       name: 'positive',
       in: { a: 1, b: 2 },
       out: { result: 3 },
+    })
+    vi.mocked(getTest).mockResolvedValue({
+      id: 'go:calc/add_test.go:calc.TestAdd',
+      name: 'TestAdd',
+      file: 'calc/add_test.go',
+      line: 10,
+      column: 1,
+      package: 'calc',
+      coveredFuncs: ['go:calc/add.go:calc.Add'],
+      sourceCode: 'func TestAdd(t *testing.T) {\n\tgot := Add(1, 2)\n}',
+      coveredFuncSources: [
+        {
+          id: 'go:calc/add.go:calc.Add',
+          name: 'Add',
+          qualifiedName: 'calc.Add',
+          kind: 'function',
+          file: 'calc/add.go',
+          line: 1,
+          column: 1,
+          package: 'calc',
+          sourceCode: 'func Add(a, b int) int {\n\treturn a + b\n}',
+        },
+      ],
     })
 
     render(
@@ -58,8 +83,13 @@ describe('DiffPage', () => {
         'go:calc/add_test.go:calc.TestAdd',
         'go:calc/add_test.go:calc.TestAdd:positive'
       )
+      expect(getTest).toHaveBeenCalledWith('default', 'go:calc/add_test.go:calc.TestAdd')
       expect(screen.getByText((text) => text.includes('"a": 1'))).toBeInTheDocument()
       expect(screen.getByText((text) => text.includes('"result": 3'))).toBeInTheDocument()
+      expect(screen.getByText('Test Code: TestAdd')).toBeInTheDocument()
+      expect(screen.getByText('Function Code: calc.Add')).toBeInTheDocument()
+      expect(screen.getByText((text) => text.includes('func TestAdd'))).toBeInTheDocument()
+      expect(screen.getByText((text) => text.includes('func Add'))).toBeInTheDocument()
     })
     expect(screen.queryByText((text) => text.includes('"oldValue"'))).not.toBeInTheDocument()
   })

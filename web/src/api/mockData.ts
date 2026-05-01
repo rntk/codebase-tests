@@ -84,6 +84,21 @@ const tests: TestFunc[] = [
       { id: 'go:calc/add_test.go:calc.TestAdd:negative', name: 'negative', casePath: 'testdata/calc/TestAdd/negative' },
     ],
     coveredFuncs: ['go:calc/add.go:calc.Add:1:1'],
+    sourceCode:
+      'func TestAdd(t *testing.T) {\n\tcases := loadGoldenCases(t)\n\tfor _, tc := range cases {\n\t\tgot := Add(tc.A, tc.B)\n\t\tassertEqual(t, got, tc.Want)\n\t}\n}',
+    coveredFuncSources: [
+      {
+        id: 'go:calc/add.go:calc.Add:1:1',
+        name: 'Add',
+        qualifiedName: 'calc.Add',
+        kind: 'function',
+        file: 'calc/add.go',
+        line: 1,
+        column: 1,
+        package: 'calc',
+        sourceCode: 'func Add(a, b int) int {\n\treturn a + b\n}',
+      },
+    ],
   },
   {
     id: 'go:calc/sub_test.go:calc.TestSub',

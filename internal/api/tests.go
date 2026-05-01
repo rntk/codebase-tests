@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/review-server/internal/golden"
+	"github.com/review-server/internal/plugin"
 	"github.com/review-server/internal/project"
 	"github.com/review-server/internal/tests"
 )
@@ -29,14 +29,14 @@ func (h *TestsHandler) SetProject(p *project.Project) {
 }
 
 // RegisterRoutes wires test routes.
-func (h *TestsHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/projects/{id}/tests", h.List)
-	r.Get("/projects/{id}/tests/{testId}", h.Get)
+func (h *TestsHandler) RegisterRoutes(r *http.ServeMux) {
+	r.HandleFunc("GET /projects/{id}/tests", h.List)
+	r.HandleFunc("GET /projects/{id}/tests/{testId}", h.Get)
 }
 
 // List returns the test tree.
 func (h *TestsHandler) List(w http.ResponseWriter, r *http.Request) {
-	id := pathParam(chi.URLParam(r, "id"))
+	id := pathParam(r.PathValue("id"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -53,8 +53,8 @@ func (h *TestsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a single test with detail.
 func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id := pathParam(chi.URLParam(r, "id"))
-	testID := pathParam(chi.URLParam(r, "testId"))
+	id := pathParam(r.PathValue("id"))
+	testID := pathParam(r.PathValue("testId"))
 	p, ok := h.store[id]
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -67,15 +67,17 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type detailResponse struct {
-		ID           string              `json:"id"`
-		Name         string              `json:"name"`
-		File         string              `json:"file"`
-		Line         int                 `json:"line"`
-		Column       int                 `json:"column"`
-		Package      string              `json:"package"`
-		SubCases     []goldenTestCaseRef `json:"subCases,omitempty"`
-		CoveredFuncs []string            `json:"coveredFuncs,omitempty"`
-		GoldenCases  []golden.GoldenCase `json:"goldenCases,omitempty"`
+		ID                 string              `json:"id"`
+		Name               string              `json:"name"`
+		File               string              `json:"file"`
+		Line               int                 `json:"line"`
+		Column             int                 `json:"column"`
+		Package            string              `json:"package"`
+		SubCases           []goldenTestCaseRef `json:"subCases,omitempty"`
+		CoveredFuncs       []string            `json:"coveredFuncs,omitempty"`
+		SourceCode         string              `json:"sourceCode,omitempty"`
+		CoveredFuncSources []sourceSnippet     `json:"coveredFuncSources,omitempty"`
+		GoldenCases        []golden.GoldenCase `json:"goldenCases,omitempty"`
 	}
 	resp := detailResponse{
 		ID:           t.ID,
@@ -86,6 +88,10 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Package:      t.Package,
 		CoveredFuncs: t.CoveredFuncs,
 	}
+	if code, err := readSourceSnippet(p.Path, t.File, t.Line); err == nil {
+		resp.SourceCode = code
+	}
+	resp.CoveredFuncSources = coveredFunctionSources(p.Path, h.discovery.Registry(), t.CoveredFuncs)
 	for _, c := range t.SubCases {
 		resp.SubCases = append(resp.SubCases, goldenTestCaseRef{
 			ID:       c.ID,
@@ -103,4 +109,51 @@ type goldenTestCaseRef struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	CasePath string `json:"casePath"`
+}
+
+type sourceSnippet struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	QualifiedName string `json:"qualifiedName"`
+	Kind          string `json:"kind"`
+	File          string `json:"file"`
+	Line          int    `json:"line"`
+	Column        int    `json:"column"`
+	Package       string `json:"package"`
+	SourceCode    string `json:"sourceCode,omitempty"`
+}
+
+func coveredFunctionSources(projectPath string, registry *plugin.Registry, coveredFuncIDs []string) []sourceSnippet {
+	if len(coveredFuncIDs) == 0 || registry == nil {
+		return nil
+	}
+	symbols, err := tests.DiscoverSymbols(registry, projectPath)
+	if err != nil {
+		return nil
+	}
+	covered := make(map[string]struct{}, len(coveredFuncIDs))
+	for _, id := range coveredFuncIDs {
+		covered[id] = struct{}{}
+	}
+	var out []sourceSnippet
+	for _, sym := range symbols {
+		if _, ok := covered[sym.ID]; !ok {
+			continue
+		}
+		item := sourceSnippet{
+			ID:            sym.ID,
+			Name:          sym.Name,
+			QualifiedName: sym.QualifiedName,
+			Kind:          sym.Kind,
+			File:          sym.File,
+			Line:          sym.Line,
+			Column:        sym.Column,
+			Package:       sym.Package,
+		}
+		if code, err := readSourceSnippet(projectPath, sym.File, sym.Line); err == nil {
+			item.SourceCode = code
+		}
+		out = append(out, item)
+	}
+	return out
 }
