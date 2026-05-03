@@ -7,9 +7,15 @@ import (
 
 // MutationResult is the result of running a single mutation.
 type MutationResult struct {
-	Mutation string `json:"mutation"` // Description of the mutation
-	Passed   bool   `json:"passed"`   // Whether the test passed (usually bad for a mutation)
-	Output   string `json:"output"`   // Test output
+	Mutation string `json:"mutation"`
+	Survived bool   `json:"survived"` // true if the test still passed under mutation (bad)
+	Output   string `json:"output"`
+}
+
+// Mutation represents a single mutation of the JSON data.
+type Mutation struct {
+	Description string `json:"description"`
+	Data        []byte `json:"data"`
 }
 
 // MutateJSON generates a list of mutated JSON contents.
@@ -21,22 +27,30 @@ func MutateJSON(data []byte) ([]Mutation, error) {
 
 	var mutations []Mutation
 	walkAndMutate("", val, func(path string, mutatedVal any) {
-		mutatedData, _ := json.MarshalIndent(mutatedVal, "", "  ")
+		mutatedData, err := json.MarshalIndent(mutatedVal, "", "  ")
+		if err != nil {
+			return
+		}
+		desc := path
+		if desc == "" {
+			desc = "<root>"
+		}
 		mutations = append(mutations, Mutation{
-			Description: fmt.Sprintf("mutate %s", path),
+			Description: desc,
 			Data:        mutatedData,
 		})
 	})
 	return mutations, nil
 }
 
-// Mutation represents a single mutation of the JSON data.
-type Mutation struct {
-	Description string `json:"description"`
-	Data        []byte `json:"data"`
-}
-
 func walkAndMutate(path string, val any, report func(string, any)) {
+	label := func(suffix string) string {
+		if path == "" {
+			return suffix
+		}
+		return path + " " + suffix
+	}
+
 	switch v := val.(type) {
 	case map[string]any:
 		for k, child := range v {
@@ -45,12 +59,12 @@ func walkAndMutate(path string, val any, report func(string, any)) {
 				childPath = path + "." + k
 			}
 
-			// Mutation: Remove field
+			// Mutation: remove field
 			mutated := copyMap(v)
 			delete(mutated, k)
 			report(childPath+" (removed)", mutated)
 
-			// Recurse
+			// Recurse; rebuild parent for each child mutation
 			walkAndMutate(childPath, child, func(p string, mv any) {
 				m := copyMap(v)
 				m[k] = mv
@@ -61,35 +75,37 @@ func walkAndMutate(path string, val any, report func(string, any)) {
 		for i, child := range v {
 			childPath := fmt.Sprintf("%s[%d]", path, i)
 
-			// Mutation: Remove element
-			mutated := make([]any, 0, len(v)-1)
-			mutated = append(mutated, v[:i]...)
+			// Mutation: remove element
+			mutated := append([]any{}, v[:i]...)
 			mutated = append(mutated, v[i+1:]...)
 			report(childPath+" (removed)", mutated)
 
-			// Recurse
 			walkAndMutate(childPath, child, func(p string, mv any) {
-				m := make([]any, len(v))
-				copy(m, v)
+				m := append([]any{}, v...)
 				m[i] = mv
 				report(p, m)
 			})
 		}
 	case string:
-		if val != "" {
-			report(path+" (empty string)", "")
+		if v != "" {
+			report(label("(emptied)"), "")
 		}
-		report(path+" (changed string)", "MUTATED_"+v)
+		report(label("(mutated)"), "MUTATED_"+v)
 	case float64:
 		if v != 0 {
-			report(path+" (zero)", 0)
+			report(label("(zeroed)"), 0)
 		}
-		report(path+" (increment)", v+1)
+		report(label("(incremented)"), v+1)
 	case bool:
-		report(path+" (toggle)", !v)
+		report(label("(toggled)"), !v)
+	case nil:
+		report(label("(unnulled)"), "MUTATED_NULL")
 	}
 }
 
+// copyMap returns a shallow copy. Safe here because callers serialize the
+// result via json.Marshal before any further mutation runs, so shared subtree
+// references are never mutated in place. Do not change that invariant.
 func copyMap(m map[string]any) map[string]any {
 	cp := make(map[string]any, len(m))
 	for k, v := range m {

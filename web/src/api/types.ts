@@ -99,7 +99,7 @@ export interface GoldenCaseDiff {
 
 export interface MutationResult {
   mutation: string;
-  passed: boolean;
+  survived: boolean;
   output: string;
 }
 

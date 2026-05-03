@@ -5,24 +5,72 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sync"
 
 	"github.com/rntk/codebase-tests/internal/golden"
 	"github.com/rntk/codebase-tests/internal/plugin"
 	"github.com/rntk/codebase-tests/internal/project"
 )
 
+// maxMutations caps the number of mutations executed per request.
+const maxMutations = 500
+
 // GoldenHandler implements golden file endpoints.
 type GoldenHandler struct {
 	store    map[string]*project.Project
 	registry *plugin.Registry
+
+	mu        sync.Mutex
+	caseLocks map[string]*sync.Mutex
 }
 
 // NewGoldenHandler creates a new handler.
 func NewGoldenHandler(registry *plugin.Registry) *GoldenHandler {
 	return &GoldenHandler{
-		store:    make(map[string]*project.Project),
-		registry: registry,
+		store:     make(map[string]*project.Project),
+		registry:  registry,
+		caseLocks: make(map[string]*sync.Mutex),
 	}
+}
+
+// lockFor returns a per-path mutex so concurrent mutation runs on the
+// same case can't clobber each other's backups.
+func (h *GoldenHandler) lockFor(path string) *sync.Mutex {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if m, ok := h.caseLocks[path]; ok {
+		return m
+	}
+	m := &sync.Mutex{}
+	h.caseLocks[path] = m
+	return m
+}
+
+// writeAtomic writes data to path via a temp file + rename, preserving mode.
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".mutate-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // SetProject registers a project in the store.
@@ -81,6 +129,17 @@ func (h *GoldenHandler) MutateCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lock := h.lockFor(gc.InPath)
+	lock.Lock()
+	defer lock.Unlock()
+
+	info, err := os.Stat(gc.InPath)
+	if err != nil {
+		http.Error(w, "stat input: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mode := info.Mode().Perm()
+
 	data, err := os.ReadFile(gc.InPath)
 	if err != nil {
 		http.Error(w, "read input: "+err.Error(), http.StatusInternalServerError)
@@ -92,6 +151,9 @@ func (h *GoldenHandler) MutateCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "generate mutations: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if len(mutations) > maxMutations {
+		mutations = mutations[:maxMutations]
+	}
 
 	pluginName, _, _, _, _ := golden.ParseTestID(testId)
 	pl, err := h.registry.For(pluginName)
@@ -100,40 +162,44 @@ func (h *GoldenHandler) MutateCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Backup original file
 	original := make([]byte, len(data))
 	copy(original, data)
 	defer func() {
-		_ = os.WriteFile(gc.InPath, original, 0644)
+		_ = writeAtomic(gc.InPath, original, mode)
 	}()
 
+	ctx := r.Context()
 	results := make([]golden.MutationResult, 0, len(mutations))
 	for _, m := range mutations {
-		if err := os.WriteFile(gc.InPath, m.Data, 0644); err != nil {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+
+		if err := writeAtomic(gc.InPath, m.Data, mode); err != nil {
 			results = append(results, golden.MutationResult{
 				Mutation: m.Description,
-				Passed:   false,
+				Survived: false,
 				Output:   "failed to write mutated file: " + err.Error(),
 			})
 			continue
 		}
 
-		res, err := pl.RunTests(r.Context(), plugin.TestSelection{
+		res, err := pl.RunTests(ctx, plugin.TestSelection{
 			TestIDs: []string{testId},
 		}, defaultRunOptions(p))
 
-		passed := false
+		survived := false
 		output := ""
 		if err != nil {
 			output = err.Error()
 		} else {
-			passed = res.Passed
+			survived = res.Passed
 			output = res.Output
 		}
 
 		results = append(results, golden.MutationResult{
 			Mutation: m.Description,
-			Passed:   passed,
+			Survived: survived,
 			Output:   output,
 		})
 	}

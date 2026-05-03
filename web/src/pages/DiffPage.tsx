@@ -424,8 +424,8 @@ export function DiffPage() {
                   {mutationResults.map((r, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                       <td style={{ padding: 4 }}>{r.mutation}</td>
-                      <td style={{ padding: 4, color: r.passed ? '#d32f2f' : '#2e7d32' }}>
-                        {r.passed ? '❌ Passed (Good test should fail)' : '✅ Failed (Expected)'}
+                      <td style={{ padding: 4, color: r.survived ? '#d32f2f' : '#2e7d32' }}>
+                        {r.survived ? '❌ Survived (test should have failed)' : '✅ Killed (expected)'}
                       </td>
                     </tr>
                   ))}
