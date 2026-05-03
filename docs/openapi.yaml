@@ -1,0 +1,395 @@
+openapi: 3.0.3
+info:
+  title: Review Server API
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        '200':
+          description: OK
+
+  /api/projects:
+    get:
+      operationId: listProjects
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    post:
+      operationId: createProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: { type: string }
+                name: { type: string }
+                plugins:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PluginSettings'
+      responses:
+        '200':
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/projects/{id}:
+    get:
+      operationId: getProject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Project metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/projects/{id}/files:
+    get:
+      operationId: listFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: File tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileNode'
+
+  /api/projects/{id}/symbols:
+    get:
+      operationId: listSymbols
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Symbol tree with coverage
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Symbol'
+
+  /api/projects/{id}/tests:
+    get:
+      operationId: listTests
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Test tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestFunc'
+
+  /api/projects/{id}/tests/{testId}:
+    get:
+      operationId: getTest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: testId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Test detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestFunc'
+
+  /api/projects/{id}/tests/{testId}/golden:
+    get:
+      operationId: listGoldenCases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: testId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Golden cases for a test
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GoldenCase'
+
+  /api/projects/{id}/tests/{testId}/golden/{caseId}:
+    get:
+      operationId: getGoldenCase
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: testId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Golden case content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldenCaseContent'
+
+  /api/projects/{id}/tests/{testId}/golden/{caseId}/diff:
+    get:
+      operationId: getGoldenDiff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: testId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Structural diff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldenCaseDiff'
+
+  /api/projects/{id}/coverage:
+    get:
+      operationId: getCoverage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Coverage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoverageReport'
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        path: { type: string }
+        name: { type: string }
+        plugins:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginSettings'
+        goldenRoot: { type: string }
+        toolTimeoutSeconds: { type: integer }
+
+    PluginSettings:
+      type: object
+      properties:
+        name: { type: string }
+        language: { type: string }
+        lspServerAddress: { type: string }
+
+    FileNode:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        isDir: { type: boolean }
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileNode'
+
+    Symbol:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        qualifiedName: { type: string }
+        kind: { type: string }
+        file: { type: string }
+        line: { type: integer }
+        column: { type: integer }
+        package: { type: string }
+        covered: { type: boolean }
+        coveredBy:
+          type: array
+          items: { type: string }
+
+    TestFunc:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        file: { type: string }
+        line: { type: integer }
+        column: { type: integer }
+        package: { type: string }
+        subCases:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestCase'
+        coveredFuncs:
+          type: array
+          items: { type: string }
+        sourceCode: { type: string }
+        coveredFuncSources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceSnippet'
+        goldenCases:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoldenCase'
+
+    SourceSnippet:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        qualifiedName: { type: string }
+        kind: { type: string }
+        file: { type: string }
+        line: { type: integer }
+        column: { type: integer }
+        package: { type: string }
+        sourceCode: { type: string }
+
+    TestCase:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        casePath: { type: string }
+
+    GoldenCase:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        inPath: { type: string }
+        outPath: { type: string }
+        metaPath: { type: string }
+        inExists: { type: boolean }
+        outExists: { type: boolean }
+        meta:
+          type: object
+          nullable: true
+
+    GoldenCaseContent:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        in: {}
+        out: {}
+        meta:
+          type: object
+          nullable: true
+        inExists: { type: boolean }
+        outExists: { type: boolean }
+
+    GoldenCaseDiff:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        inDiff:
+          $ref: '#/components/schemas/DiffNode'
+        outDiff:
+          $ref: '#/components/schemas/DiffNode'
+
+    DiffNode:
+      type: object
+      properties:
+        kind: { type: string, enum: [added, removed, changed, unchanged] }
+        key: { type: string, nullable: true }
+        oldValue: {}
+        newValue: {}
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiffNode'
+
+    CoverageReport:
+      type: object
+      properties:
+        scope: { type: string, enum: [run, test] }
+        percentage: { type: number }
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileCoverage'
+        uncovered:
+          type: array
+          items: { type: string }
+
+    FileCoverage:
+      type: object
+      properties:
+        path: { type: string }
+        percentage: { type: number }
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineRange'
+
+    LineRange:
+      type: object
+      properties:
+        start: { type: integer }
+        end: { type: integer }
+        hit: { type: boolean }
