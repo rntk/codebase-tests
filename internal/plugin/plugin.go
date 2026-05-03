@@ -35,7 +35,7 @@ type PluginConfig struct {
 
 // RunOptions controls external tool execution.
 type RunOptions struct {
-	Timeout        int      `json:"timeout,omitempty"`        // seconds
+	Timeout        int      `json:"timeout,omitempty"` // seconds
 	WorkingDir     string   `json:"workingDir,omitempty"`
 	EnvAllowlist   []string `json:"envAllowlist,omitempty"`   // allowed env var names
 	MaxOutputBytes int64    `json:"maxOutputBytes,omitempty"` // default 1MB
@@ -69,16 +69,16 @@ type TestCase struct {
 
 // Symbol represents a function, method, or other discoverable symbol.
 type Symbol struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	QualifiedName string  `json:"qualifiedName"`
-	Kind         string   `json:"kind"` // "function", "method", "class", etc.
-	File         string   `json:"file"`
-	Line         int      `json:"line"`
-	Column       int      `json:"column"`
-	Package      string   `json:"package"`
-	Covered      bool     `json:"covered"`
-	CoveredBy    []string `json:"coveredBy,omitempty"` // test IDs
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	QualifiedName string   `json:"qualifiedName"`
+	Kind          string   `json:"kind"` // "function", "method", "class", etc.
+	File          string   `json:"file"`
+	Line          int      `json:"line"`
+	Column        int      `json:"column"`
+	Package       string   `json:"package"`
+	Covered       bool     `json:"covered"`
+	CoveredBy     []string `json:"coveredBy,omitempty"` // test IDs
 }
 
 // Position identifies a location in a file.
@@ -90,7 +90,7 @@ type Position struct {
 
 // Graph is a call-graph fragment rooted at a symbol.
 type Graph struct {
-	Symbol   string   `json:"symbol"`   // symbol ID
+	Symbol   string   `json:"symbol"`             // symbol ID
 	Incoming []string `json:"incoming,omitempty"` // symbol IDs
 	Outgoing []string `json:"outgoing,omitempty"` // symbol IDs
 }
@@ -121,16 +121,16 @@ type TestEntry struct {
 
 // CoverageReport holds coverage data.
 type CoverageReport struct {
-	Scope      string  `json:"scope"` // "run" or "test"
-	Percentage float64 `json:"percentage"`
+	Scope      string         `json:"scope"` // "run" or "test"
+	Percentage float64        `json:"percentage"`
 	Files      []FileCoverage `json:"files,omitempty"`
 	Uncovered  []string       `json:"uncovered,omitempty"` // symbol IDs with no coverage
 }
 
 // FileCoverage is per-file coverage details.
 type FileCoverage struct {
-	Path       string  `json:"path"`
-	Percentage float64 `json:"percentage"`
+	Path       string      `json:"path"`
+	Percentage float64     `json:"percentage"`
 	Lines      []LineRange `json:"lines,omitempty"`
 }
 

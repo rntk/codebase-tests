@@ -1,7 +1,7 @@
 package lsp
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"testing"

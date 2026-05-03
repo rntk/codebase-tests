@@ -521,10 +521,10 @@ type jsonRPCRequest struct {
 }
 
 type jsonRPCResponse struct {
-	JSONRPC string        `json:"jsonrpc"`
-	ID      int           `json:"id"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int             `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonRPCError `json:"error,omitempty"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
 type jsonRPCError struct {
@@ -535,10 +535,10 @@ type jsonRPCError struct {
 // LSP protocol types.
 
 type InitializeParams struct {
-	ProcessID             int             `json:"processId"`
-	RootURI               string          `json:"rootUri,omitempty"`
-	Capabilities          map[string]any  `json:"capabilities"`
-	InitializationOptions any             `json:"initializationOptions,omitempty"`
+	ProcessID             int            `json:"processId"`
+	RootURI               string         `json:"rootUri,omitempty"`
+	Capabilities          map[string]any `json:"capabilities"`
+	InitializationOptions any            `json:"initializationOptions,omitempty"`
 }
 
 type TextDocumentIdentifier struct {
@@ -625,14 +625,14 @@ type Position struct {
 
 // CallHierarchyItem represents an item in the call hierarchy.
 type CallHierarchyItem struct {
-	Name           string   `json:"name"`
-	Kind           int      `json:"kind"`
-	Tags           []int    `json:"tags,omitempty"`
-	Detail         string   `json:"detail,omitempty"`
-	URI            string   `json:"uri"`
-	Range          Range    `json:"range"`
-	SelectionRange Range    `json:"selectionRange"`
-	Data           any      `json:"data,omitempty"`
+	Name           string `json:"name"`
+	Kind           int    `json:"kind"`
+	Tags           []int  `json:"tags,omitempty"`
+	Detail         string `json:"detail,omitempty"`
+	URI            string `json:"uri"`
+	Range          Range  `json:"range"`
+	SelectionRange Range  `json:"selectionRange"`
+	Data           any    `json:"data,omitempty"`
 }
 
 // CallHierarchyIncomingCall represents an incoming call.

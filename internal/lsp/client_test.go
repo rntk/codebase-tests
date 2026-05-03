@@ -14,8 +14,8 @@ import (
 
 // fakeServer reads requests from in and writes responses to out.
 type fakeServer struct {
-	in     *bufio.Reader
-	out    io.WriteCloser
+	in      *bufio.Reader
+	out     io.WriteCloser
 	handler func(method string, params json.RawMessage) (any, error)
 }
 
