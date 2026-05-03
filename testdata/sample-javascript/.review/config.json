@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "sample-javascript",
+  "plugins": [
+    "javascript"
+  ],
+  "goldenRoot": "tests/golden",
+  "toolTimeoutSeconds": 30
+}
