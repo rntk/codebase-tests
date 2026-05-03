@@ -78,7 +78,8 @@ describe('DiffPage', () => {
     )
 
     await screen.findByText('Diff: positive')
-    fireEvent.click(screen.getByLabelText('View raw'))
+    expect(screen.getByRole('tab', { name: 'View raw' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Diff' })).toBeInTheDocument()
 
     await waitFor(() => {
       expect(getGoldenCase).toHaveBeenCalledWith(

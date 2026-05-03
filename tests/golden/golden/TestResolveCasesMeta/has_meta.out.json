@@ -1,0 +1,18 @@
+[
+  {
+    "id": "go:pkg/foo.go:pkg.TestFunc:a",
+    "name": "a",
+    "inPath": "golden/pkg/TestFunc/a.in.json",
+    "outPath": "golden/pkg/TestFunc/a.out.json",
+    "metaPath": "golden/pkg/TestFunc/a.meta.json",
+    "inExists": true,
+    "outExists": true,
+    "meta": {
+      "version": 1,
+      "labels": ["fast"],
+      "slos": {
+        "maxDurationMs": 500
+      }
+    }
+  }
+]

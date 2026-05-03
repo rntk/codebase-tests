@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { getGoldenCase, getGoldenDiff, getTest, listSymbols } from '../api/client.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { DiffTree } from '../components/DiffTree.tsx'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
-import type { GoldenCaseContent, TestFunc, SourceSnippet, Symbol } from '../api/types.ts'
+import type { GoldenCaseContent, TestFunc, SourceSnippet, Symbol, DiffNode } from '../api/types.ts'
 
 function formatRawContent(value: unknown, emptyMessage: string): string {
   if (value === undefined) return emptyMessage
   return JSON.stringify(value, null, 2) ?? String(value)
+}
+
+function hasDiffNode(node?: DiffNode | null): boolean {
+  if (!node) return false
+  if (node.kind !== 'unchanged') return true
+  return node.children?.some(hasDiffNode) ?? false
 }
 
 // maskRanges returns inclusive-exclusive [start, end) ranges within `code`
@@ -181,7 +187,9 @@ export function DiffPage() {
     caseId: string
   }>()
   const navigate = useNavigate()
-  const [rawMode, setRawMode] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') === 'diff' ? 'diff' : 'raw'
+  const shouldLoadRaw = requestedTab === 'raw'
   const [selectedFuncId, setSelectedFuncId] = useState<string | null>(null)
   const funcEls = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -189,30 +197,31 @@ export function DiffPage() {
     data,
     loading,
     error,
+    refetch: refetchDiff,
   } = useApi(() => getGoldenDiff(projectId!, testId!, caseId!), [projectId, testId, caseId])
   const {
     data: content,
     loading: contentLoading,
     error: contentError,
   } = useApi(
-    () => (rawMode ? getGoldenCase(projectId!, testId!, caseId!) : Promise.resolve(null as GoldenCaseContent | null)),
-    [projectId, testId, caseId, rawMode]
+    () => (shouldLoadRaw ? getGoldenCase(projectId!, testId!, caseId!) : Promise.resolve(null as GoldenCaseContent | null)),
+    [projectId, testId, caseId, shouldLoadRaw]
   )
   const {
     data: test,
     loading: testLoading,
     error: testError,
   } = useApi(
-    () => (rawMode ? getTest(projectId!, testId!) : Promise.resolve(null as TestFunc | null)),
-    [projectId, testId, rawMode]
+    () => (shouldLoadRaw ? getTest(projectId!, testId!) : Promise.resolve(null as TestFunc | null)),
+    [projectId, testId, shouldLoadRaw]
   )
   const {
     data: symbols,
     loading: symbolsLoading,
     error: symbolsError,
   } = useApi(
-    () => (rawMode ? listSymbols(projectId!, true) : Promise.resolve(null as Symbol[] | null)),
-    [projectId, rawMode]
+    () => (shouldLoadRaw ? listSymbols(projectId!, true) : Promise.resolve(null as Symbol[] | null)),
+    [projectId, shouldLoadRaw]
   )
 
   const setFuncRef = useCallback((id: string, el: HTMLDivElement | null) => {
@@ -267,13 +276,21 @@ export function DiffPage() {
     (error?.message?.toLowerCase()?.includes('no git repo') ?? false) ||
     (error?.message?.toLowerCase()?.includes('untracked') ?? false)
 
+  const inDiff = data?.inDiff
+  const outDiff = data?.outDiff
+  const hasDiff = hasDiffNode(inDiff) || hasDiffNode(outDiff)
+  const rawMode = requestedTab !== 'diff' || !hasDiff
+
+  useEffect(() => {
+    if (!data || requestedTab !== 'diff' || hasDiff) return
+    setSearchParams({}, { replace: true })
+  }, [data, requestedTab, hasDiff, setSearchParams])
+
   if (loading) return <LoadingState />
   if (error && !isNoGit) return <ErrorState error={error} />
   if (rawMode && contentError) return <ErrorState error={contentError} />
   if (rawMode && testError) return <ErrorState error={testError} />
 
-  const inDiff = data?.inDiff
-  const outDiff = data?.outDiff
   const inContent = formatRawContent(content?.in, 'No input content.')
   const outContent = formatRawContent(content?.out, 'No output content.')
 
@@ -297,10 +314,54 @@ export function DiffPage() {
         <h2 style={{ margin: 0 }}>
           Diff: {data?.name ?? caseId}
         </h2>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-          <input type="checkbox" checked={rawMode} onChange={(e) => setRawMode(e.target.checked)} />
-          View raw
-        </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div role="tablist" aria-label="Golden case view" style={{ display: 'flex', gap: 4 }}>
+            <button
+              role="tab"
+              aria-selected={rawMode}
+              onClick={() => setSearchParams({})}
+              style={{
+                padding: '6px 12px',
+                cursor: 'pointer',
+                background: rawMode ? '#e3f2fd' : '#fff',
+                border: '1px solid #ccc',
+                borderRadius: 4,
+                fontWeight: rawMode ? 600 : 400,
+              }}
+            >
+              View raw
+            </button>
+            {hasDiff && (
+              <button
+                role="tab"
+                aria-selected={!rawMode}
+                onClick={() => setSearchParams({ tab: 'diff' })}
+                style={{
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  background: !rawMode ? '#e3f2fd' : '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: 4,
+                  fontWeight: !rawMode ? 600 : 400,
+                }}
+              >
+                Diff
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => refetchDiff()}
+            style={{
+              padding: '6px 12px',
+              cursor: 'pointer',
+              background: '#fff',
+              border: '1px solid #ccc',
+              borderRadius: 4,
+            }}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {isNoGit && (

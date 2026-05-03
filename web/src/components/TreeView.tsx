@@ -1,9 +1,10 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
 
 export interface TreeNodeMarker {
-  kind: 'success'
+  kind: 'success' | 'changed'
   label: string
   title?: string
+  icon?: ReactNode
 }
 
 export interface TreeNode {
@@ -18,6 +19,11 @@ const markerStyleByKind: Record<TreeNodeMarker['kind'], CSSProperties> = {
     color: '#2e7d32',
     background: '#e8f5e9',
     border: '1px solid #a5d6a7',
+  },
+  changed: {
+    color: '#856404',
+    background: '#fff3cd',
+    border: '1px solid #ffe082',
   },
 }
 
@@ -86,7 +92,7 @@ function TreeItem({
               flex: '0 0 auto',
             }}
           >
-            ✓
+            {node.marker.icon ?? (node.marker.kind === 'success' ? '✓' : 'Δ')}
           </span>
         )}
       </div>

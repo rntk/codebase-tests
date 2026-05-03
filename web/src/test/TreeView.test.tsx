@@ -55,4 +55,22 @@ describe('TreeView', () => {
     expect(marker).toHaveTextContent('✓')
     expect(marker).toHaveAccessibleName('Has golden test data')
   })
+
+  it('renders changed node markers', () => {
+    render(
+      <TreeView
+        nodes={[
+          {
+            id: 'test-with-changes',
+            label: 'TestWithChanges',
+            marker: { kind: 'changed', label: 'Has changes' },
+          },
+        ]}
+      />
+    )
+
+    const marker = screen.getByTestId('tree-item-marker-test-with-changes')
+    expect(marker).toHaveTextContent('Δ')
+    expect(marker).toHaveAccessibleName('Has changes')
+  })
 })

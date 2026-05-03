@@ -1,0 +1,19 @@
+[
+  {
+    "id": "go:calc/add_test.go:calc.TestAdd",
+    "name": "TestAdd",
+    "file": "calc/add_test.go",
+    "line": 1,
+    "column": 1,
+    "package": "calc",
+    "hasGolden": true
+  },
+  {
+    "id": "go:calc/sub_test.go:calc.TestSub",
+    "name": "TestSub",
+    "file": "calc/sub_test.go",
+    "line": 1,
+    "column": 1,
+    "package": "calc"
+  }
+]

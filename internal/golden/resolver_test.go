@@ -226,46 +226,70 @@ func TestResolveCasesDuplicateNames(t *testing.T) {
 }
 
 func TestResolveCasesMeta(t *testing.T) {
-	dir := t.TempDir()
-	conv := plugin.GoldenConvention{
-		Root:        "golden",
-		SegmentFunc: "qualifiedName",
-		CaseSegment: "file",
+	type fileInput struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	type input struct {
+		Convention plugin.GoldenConvention `json:"convention"`
+		TestID     string                  `json:"testId"`
+		Dirs       []string                `json:"dirs"`
+		Files      []fileInput             `json:"files"`
 	}
 
-	funcDir := filepath.Join(dir, "golden", "pkg", "TestFunc")
-	if err := os.MkdirAll(funcDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(funcDir, "a.in.json"), []byte(`{}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(funcDir, "a.out.json"), []byte(`{}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(funcDir, "a.meta.json"), []byte(`{"version":1,"labels":["fast"],"slos":{"maxDurationMs":500}}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	cases, err := ResolveCases(dir, "go:pkg/foo.go:pkg.TestFunc", conv)
+	goldenDir := filepath.Join("..", "..", "tests", "golden", "golden", "TestResolveCasesMeta")
+	entries, err := os.ReadDir(goldenDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) != 1 {
-		t.Fatalf("expected 1 case, got %d", len(cases))
-	}
-	c := cases[0]
-	if c.Meta == nil {
-		t.Fatal("expected meta")
-	}
-	if c.Meta.Version != 1 {
-		t.Errorf("expected version 1, got %d", c.Meta.Version)
-	}
-	if len(c.Meta.Labels) != 1 || c.Meta.Labels[0] != "fast" {
-		t.Errorf("unexpected labels: %v", c.Meta.Labels)
-	}
-	if c.Meta.SLOs == nil {
-		t.Errorf("expected slos")
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".in.json") {
+			continue
+		}
+		caseName := strings.TrimSuffix(name, ".in.json")
+		t.Run(caseName, func(t *testing.T) {
+			var in input
+			decodeJSONFile(t, filepath.Join(goldenDir, caseName+".in.json"), &in)
+
+			var want any
+			decodeJSONFile(t, filepath.Join(goldenDir, caseName+".out.json"), &want)
+
+			dir := t.TempDir()
+			for _, d := range in.Dirs {
+				if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(d)), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, f := range in.Files {
+				p := filepath.Join(dir, filepath.FromSlash(f.Path))
+				if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(f.Content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			cases, err := ResolveCases(dir, in.TestID, in.Convention)
+			if err != nil {
+				t.Fatalf("ResolveCases error: %v", err)
+			}
+
+			prefix := dir + string(filepath.Separator)
+			for i := range cases {
+				cases[i].InPath = strings.TrimPrefix(cases[i].InPath, prefix)
+				cases[i].OutPath = strings.TrimPrefix(cases[i].OutPath, prefix)
+				cases[i].MetaPath = strings.TrimPrefix(cases[i].MetaPath, prefix)
+			}
+
+			var gotJSON any
+			roundTripJSON(t, cases, &gotJSON)
+			if !reflect.DeepEqual(gotJSON, want) {
+				t.Errorf("ResolveCases =\n%v\nwant\n%v", gotJSON, want)
+			}
+		})
 	}
 }
 

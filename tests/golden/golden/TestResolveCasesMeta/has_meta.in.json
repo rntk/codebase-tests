@@ -1,0 +1,14 @@
+{
+  "convention": {
+    "root": "golden",
+    "segmentFunc": "qualifiedName",
+    "caseSegment": "file"
+  },
+  "testId": "go:pkg/foo.go:pkg.TestFunc",
+  "dirs": ["golden/pkg/TestFunc"],
+  "files": [
+    {"path": "golden/pkg/TestFunc/a.in.json", "content": "{}"},
+    {"path": "golden/pkg/TestFunc/a.out.json", "content": "{}"},
+    {"path": "golden/pkg/TestFunc/a.meta.json", "content": "{\"version\":1,\"labels\":[\"fast\"],\"slos\":{\"maxDurationMs\":500}}"}
+  ]
+}

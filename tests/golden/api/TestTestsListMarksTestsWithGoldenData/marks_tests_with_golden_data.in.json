@@ -1,0 +1,33 @@
+{
+  "project": {
+    "id": "default",
+    "name": "sample",
+    "goldenRoot": "tests/golden"
+  },
+  "testFiles": [
+    {"path": "calc/add_test.go", "language": "go", "isTest": true}
+  ],
+  "tests": {
+    "calc/add_test.go": [
+      {
+        "id": "go:calc/add_test.go:calc.TestAdd",
+        "name": "TestAdd",
+        "file": "calc/add_test.go",
+        "line": 1,
+        "column": 1,
+        "package": "calc"
+      },
+      {
+        "id": "go:calc/sub_test.go:calc.TestSub",
+        "name": "TestSub",
+        "file": "calc/sub_test.go",
+        "line": 1,
+        "column": 1,
+        "package": "calc"
+      }
+    ]
+  },
+  "goldenFiles": [
+    {"path": "tests/golden/calc/TestAdd/positive.in.json", "content": "{\"a\":1}"}
+  ]
+}

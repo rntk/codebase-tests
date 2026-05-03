@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { listTests, listGoldenCases, getTestTestPrompt } from '../api/client.ts'
-import type { TestFunc, TestCase, GoldenCase, TestPrompt } from '../api/types.ts'
+import { listTests, listGoldenCases, getTestTestPrompt, getGoldenDiff } from '../api/client.ts'
+import type { TestFunc, TestCase, GoldenCase, TestPrompt, DiffNode, GoldenCaseDiff } from '../api/types.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { TreeView, type TreeNode } from '../components/TreeView.tsx'
 import { LoadingState } from '../components/LoadingState.tsx'
@@ -21,6 +21,16 @@ function groupByFile(tests: TestFunc[]): Map<string, TestFunc[]> {
 
 function hasGoldenTestData(test: TestFunc): boolean {
   return test.hasGolden === true || (test.goldenCases?.length ?? 0) > 0
+}
+
+function hasDiffNode(node?: DiffNode | null): boolean {
+  if (!node) return false
+  if (node.kind !== 'unchanged') return true
+  return node.children?.some(hasDiffNode) ?? false
+}
+
+function hasGoldenDiff(diff?: GoldenCaseDiff | null): boolean {
+  return hasDiffNode(diff?.inDiff) || hasDiffNode(diff?.outDiff)
 }
 
 function toTreeNodes(tests: TestFunc[]): TreeNode[] {
@@ -46,6 +56,93 @@ function toTreeNodes(tests: TestFunc[]): TreeNode[] {
   }))
 }
 
+function GoldenCaseListItem({
+  projectId,
+  testId,
+  goldenCase,
+  refreshToken,
+}: {
+  projectId: string
+  testId: string
+  goldenCase: GoldenCase
+  refreshToken: number
+}) {
+  const { data: diff, loading: diffLoading, error: diffError } = useApi(
+    () => getGoldenDiff(projectId, testId, goldenCase.id),
+    [projectId, testId, goldenCase.id, refreshToken]
+  )
+  const caseUrl = `/projects/${projectId}/tests/${encodeURIComponent(testId)}/golden/${encodeURIComponent(goldenCase.id)}/diff`
+  const changed = hasGoldenDiff(diff)
+
+  return (
+    <li style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <Link to={caseUrl} style={{ color: '#1976d2', textDecoration: 'none' }}>
+        {goldenCase.name}
+      </Link>
+      {changed && (
+        <Link
+          to={`${caseUrl}?tab=diff`}
+          aria-label={`${goldenCase.name} has changes`}
+          title="View diff"
+          style={{
+            color: '#856404',
+            background: '#fff3cd',
+            border: '1px solid #ffe082',
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+            lineHeight: 1,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textDecoration: 'none',
+            flex: '0 0 auto',
+          }}
+        >
+          Δ
+        </Link>
+      )}
+      {!changed && diffLoading && (
+        <span
+          aria-label={`Checking ${goldenCase.name} for changes`}
+          title="Checking for changes"
+          style={{ fontSize: 12, color: '#888' }}
+        >
+          …
+        </span>
+      )}
+      {diffError && (
+        <span
+          aria-label={`Could not check ${goldenCase.name} for changes`}
+          title={diffError.message}
+          style={{
+            color: '#b45309',
+            background: '#fffbeb',
+            border: '1px solid #fcd34d',
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+            lineHeight: 1,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: '0 0 auto',
+          }}
+        >
+          !
+        </span>
+      )}
+      <span style={{ fontSize: 12, color: '#888' }}>
+        {goldenCase.inExists ? '✅ in' : '❌ in'} / {goldenCase.outExists ? '✅ out' : '❌ out'}
+      </span>
+    </li>
+  )
+}
+
 function GoldenCaseList({
   projectId,
   testId,
@@ -55,25 +152,40 @@ function GoldenCaseList({
   testId: string
   cases: GoldenCase[]
 }) {
+  const [refreshToken, setRefreshToken] = useState(0)
+
   return (
     <div style={{ marginTop: 12 }}>
-      <h4 style={{ margin: '8px 0' }}>Golden Cases</h4>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+        <h4 style={{ margin: 0 }}>Golden Cases</h4>
+        {cases.length > 0 && (
+          <button
+            onClick={() => setRefreshToken((value) => value + 1)}
+            style={{
+              padding: '2px 8px',
+              cursor: 'pointer',
+              background: '#fff',
+              border: '1px solid #ccc',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            Refresh
+          </button>
+        )}
+      </div>
       {cases.length === 0 ? (
         <EmptyState message="No golden cases." />
       ) : (
         <ul style={{ margin: 0, paddingLeft: 20 }}>
           {cases.map((c) => (
-            <li key={c.id} style={{ marginBottom: 4 }}>
-              <Link
-                to={`/projects/${projectId}/tests/${encodeURIComponent(testId)}/golden/${encodeURIComponent(c.id)}/diff`}
-                style={{ color: '#1976d2', textDecoration: 'none' }}
-              >
-                {c.name}
-              </Link>
-              <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>
-                {c.inExists ? '✅ in' : '❌ in'} / {c.outExists ? '✅ out' : '❌ out'}
-              </span>
-            </li>
+            <GoldenCaseListItem
+              key={c.id}
+              projectId={projectId}
+              testId={testId}
+              goldenCase={c}
+              refreshToken={refreshToken}
+            />
           ))}
         </ul>
       )}

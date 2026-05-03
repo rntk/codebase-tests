@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/rntk/codebase-tests/internal/plugin"
@@ -49,75 +51,98 @@ func (f *fakeTestPlugin) GoldenLayout() plugin.GoldenConvention { return plugin.
 func (f *fakeTestPlugin) Mutators() []plugin.Mutator            { return nil }
 func (f *fakeTestPlugin) Generators() []plugin.Generator        { return nil }
 
+type goldenFileEntry struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type listGoldenInput struct {
+	Project     project.Project           `json:"project"`
+	TestFiles   []plugin.File             `json:"testFiles"`
+	Tests       map[string][]plugin.TestFunc `json:"tests"`
+	GoldenFiles []goldenFileEntry         `json:"goldenFiles"`
+}
+
 func TestTestsListMarksTestsWithGoldenData(t *testing.T) {
-	root := t.TempDir()
-	goldenDir := filepath.Join(root, "tests", "golden", "calc", "TestAdd")
-	if err := os.MkdirAll(goldenDir, 0o755); err != nil {
-		t.Fatalf("mkdir golden dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(goldenDir, "positive.in.json"), []byte(`{"a":1}`), 0o644); err != nil {
-		t.Fatalf("write golden input: %v", err)
+	goldenDir := filepath.Join("..", "..", "tests", "golden", "api", "TestTestsListMarksTestsWithGoldenData")
+	entries, err := os.ReadDir(goldenDir)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	add := plugin.TestFunc{
-		ID:      "go:calc/add_test.go:calc.TestAdd",
-		Name:    "TestAdd",
-		File:    "calc/add_test.go",
-		Line:    1,
-		Column:  1,
-		Package: "calc",
-	}
-	sub := plugin.TestFunc{
-		ID:      "go:calc/sub_test.go:calc.TestSub",
-		Name:    "TestSub",
-		File:    "calc/sub_test.go",
-		Line:    1,
-		Column:  1,
-		Package: "calc",
-	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".in.json") {
+			continue
+		}
+		caseName := strings.TrimSuffix(name, ".in.json")
+		t.Run(caseName, func(t *testing.T) {
+			var in listGoldenInput
+			decodeJSON(t, filepath.Join(goldenDir, caseName+".in.json"), &in)
 
-	registry := plugin.NewRegistry()
-	registry.Register(&fakeTestPlugin{
-		testFiles: []plugin.File{{Path: "calc/add_test.go", Language: "go", IsTest: true}},
-		tests: map[string][]plugin.TestFunc{
-			"calc/add_test.go": {add, sub},
-		},
-	})
+			var want any
+			decodeJSON(t, filepath.Join(goldenDir, caseName+".out.json"), &want)
 
-	handler := NewTestsHandler(tests.NewDiscovery(registry))
-	handler.SetProject(&project.Project{
-		ID:         "default",
-		Path:       root,
-		Name:       "sample",
-		GoldenRoot: "tests/golden",
-	})
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+			root := t.TempDir()
+			for _, f := range in.GoldenFiles {
+				p := filepath.Join(root, filepath.FromSlash(f.Path))
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(f.Content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/default/tests", nil)
-	res := httptest.NewRecorder()
-	mux.ServeHTTP(res, req)
+			registry := plugin.NewRegistry()
+			registry.Register(&fakeTestPlugin{
+				testFiles: in.TestFiles,
+				tests:     in.Tests,
+			})
 
-	if res.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
-	}
+			handler := NewTestsHandler(tests.NewDiscovery(registry))
+			handler.SetProject(&project.Project{
+				ID:         in.Project.ID,
+				Path:       root,
+				Name:       in.Project.Name,
+				GoldenRoot: in.Project.GoldenRoot,
+			})
+			mux := http.NewServeMux()
+			handler.RegisterRoutes(mux)
 
-	var got []struct {
-		ID        string `json:"id"`
-		HasGolden bool   `json:"hasGolden,omitempty"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+			req := httptest.NewRequest(http.MethodGet, "/projects/"+in.Project.ID+"/tests", nil)
+			res := httptest.NewRecorder()
+			mux.ServeHTTP(res, req)
 
-	byID := make(map[string]bool)
-	for _, item := range got {
-		byID[item.ID] = item.HasGolden
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+			}
+
+			var gotJSON any
+			roundTrip(t, res.Body.Bytes(), &gotJSON)
+			if !reflect.DeepEqual(gotJSON, want) {
+				gotBytes, _ := json.MarshalIndent(gotJSON, "", "  ")
+				wantBytes, _ := json.MarshalIndent(want, "", "  ")
+				t.Fatalf("response =\n%s\nwant\n%s", gotBytes, wantBytes)
+			}
+		})
 	}
-	if !byID[add.ID] {
-		t.Fatalf("expected %s to be marked with golden data", add.ID)
+}
+
+func decodeJSON(t *testing.T, path string, v any) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if byID[sub.ID] {
-		t.Fatalf("expected %s not to be marked with golden data", sub.ID)
+	if err := json.Unmarshal(data, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func roundTrip(t *testing.T, data []byte, out any) {
+	t.Helper()
+	if err := json.Unmarshal(data, out); err != nil {
+		t.Fatal(err)
 	}
 }
