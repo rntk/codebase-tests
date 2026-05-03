@@ -49,14 +49,44 @@ func TestPreviousVersionTracked(t *testing.T) {
 }
 
 func TestPreviousVersionNotInGit(t *testing.T) {
-	dir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(oldWd)
+	type input struct {
+		Path string `json:"path"`
+	}
 
-	_, err := PreviousVersion("file.txt")
-	if !errors.Is(err, ErrNotInGit) {
-		t.Errorf("expected ErrNotInGit, got %v", err)
+	goldenDir := filepath.Join("..", "..", "tests", "golden", "golden", "TestPreviousVersionNotInGit")
+	entries, err := os.ReadDir(goldenDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".in.json") {
+			continue
+		}
+		caseName := strings.TrimSuffix(name, ".in.json")
+		t.Run(caseName, func(t *testing.T) {
+			var in input
+			decodeJSONFile(t, filepath.Join(goldenDir, caseName+".in.json"), &in)
+
+			var want any
+			decodeJSONFile(t, filepath.Join(goldenDir, caseName+".out.json"), &want)
+
+			dir := t.TempDir()
+			oldWd, _ := os.Getwd()
+			if err := os.Chdir(dir); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chdir(oldWd)
+
+			data, err := PreviousVersion(in.Path)
+			got := outputForPreviousVersion(data, err)
+			var gotJSON any
+			roundTripJSON(t, got, &gotJSON)
+			if !reflect.DeepEqual(gotJSON, want) {
+				t.Errorf("PreviousVersion(%q) = %#v, want %#v", in.Path, gotJSON, want)
+			}
+		})
 	}
 }
 
