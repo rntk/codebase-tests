@@ -1,13 +1,16 @@
 package api
 
 import (
+	"go/scanner"
+	"go/token"
 	"net/http"
-	"strings"
+	"path/filepath"
+	"strconv"
 
-	"github.com/review-server/internal/golden"
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
-	"github.com/review-server/internal/tests"
+	"github.com/rntk/codebase-tests/internal/golden"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
+	"github.com/rntk/codebase-tests/internal/tests"
 )
 
 // TestsHandler implements test endpoints.
@@ -92,10 +95,19 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if code, err := readSourceSnippet(p.Path, t.File, t.Line); err == nil {
 		resp.SourceCode = code
 	}
-	if covered := coveredFunctionSources(p.Path, h.discovery.Registry(), t.CoveredFuncs); len(covered) > 0 {
+
+	registry := h.discovery.Registry()
+	var symbols []plugin.Symbol
+	if registry != nil {
+		if syms, err := tests.DiscoverSymbols(registry, p.Path); err == nil {
+			symbols = syms
+		}
+	}
+	reader := newSnippetCache(p.Path)
+	if covered := coveredFunctionSources(reader, symbols, t.CoveredFuncs); len(covered) > 0 {
 		resp.CoveredFuncSources = covered
 	} else {
-		resp.CoveredFuncSources = referencedSymbolSources(p.Path, h.discovery.Registry(), resp.SourceCode, t.ID)
+		resp.CoveredFuncSources = referencedSymbolSources(reader, symbols, resp.SourceCode, t.ID, t.File)
 	}
 	for _, c := range t.SubCases {
 		resp.SubCases = append(resp.SubCases, goldenTestCaseRef{
@@ -128,12 +140,8 @@ type sourceSnippet struct {
 	SourceCode    string `json:"sourceCode,omitempty"`
 }
 
-func coveredFunctionSources(projectPath string, registry *plugin.Registry, coveredFuncIDs []string) []sourceSnippet {
-	if len(coveredFuncIDs) == 0 || registry == nil {
-		return nil
-	}
-	symbols, err := tests.DiscoverSymbols(registry, projectPath)
-	if err != nil {
+func coveredFunctionSources(reader *snippetCache, symbols []plugin.Symbol, coveredFuncIDs []string) []sourceSnippet {
+	if len(coveredFuncIDs) == 0 || len(symbols) == 0 {
 		return nil
 	}
 	covered := make(map[string]struct{}, len(coveredFuncIDs))
@@ -145,102 +153,150 @@ func coveredFunctionSources(projectPath string, registry *plugin.Registry, cover
 		if _, ok := covered[sym.ID]; !ok {
 			continue
 		}
-		item := sourceSnippet{
-			ID:            sym.ID,
-			Name:          sym.Name,
-			QualifiedName: sym.QualifiedName,
-			Kind:          sym.Kind,
-			File:          sym.File,
-			Line:          sym.Line,
-			Column:        sym.Column,
-			Package:       sym.Package,
-		}
-		if code, err := readSourceSnippet(projectPath, sym.File, sym.Line); err == nil {
-			item.SourceCode = code
-		}
-		out = append(out, item)
+		out = append(out, snippetFromSymbol(reader, sym))
 	}
 	return out
 }
 
-// referencedSymbolSources scans the given test source code for any LSP symbols
-// (functions or methods) whose name is referenced lexically. Used as a fallback
-// when t.CoveredFuncs is unpopulated by the language plugin.
-func referencedSymbolSources(projectPath string, registry *plugin.Registry, sourceCode, testID string) []sourceSnippet {
-	if sourceCode == "" || registry == nil {
+// referencedSymbolSources scans the given test source code for any project
+// symbols (functions or methods) whose name is used as an identifier. Strings
+// and comments are skipped via go/scanner tokenization, so false positives
+// from string literals or comments are avoided. Used as a fallback when the
+// language plugin doesn't populate t.CoveredFuncs.
+func referencedSymbolSources(reader *snippetCache, symbols []plugin.Symbol, sourceCode, testID, testFile string) []sourceSnippet {
+	if sourceCode == "" || len(symbols) == 0 {
 		return nil
 	}
-	symbols, err := tests.DiscoverSymbols(registry, projectPath)
-	if err != nil {
+	idents, qualified := goReferencedNames(sourceCode)
+	if len(idents) == 0 && len(qualified) == 0 {
 		return nil
 	}
+	testPkg := filepath.ToSlash(filepath.Dir(testFile))
 	var out []sourceSnippet
 	seen := make(map[string]bool)
 	for _, sym := range symbols {
-		if sym.ID == testID {
+		if sym.ID == testID || seen[sym.ID] {
 			continue
 		}
 		if sym.Kind != "function" && sym.Kind != "method" {
 			continue
 		}
-		if seen[sym.ID] {
-			continue
+		// Match qualified name (e.g. pkg.Foo) anywhere; match bare name only
+		// when the symbol is in the same package as the test (avoiding cross-
+		// package collisions for common short names like Close/Read/New).
+		matched := qualified[sym.QualifiedName]
+		if !matched && idents[sym.Name] {
+			symPkg := filepath.ToSlash(filepath.Dir(sym.File))
+			if symPkg == testPkg {
+				matched = true
+			}
 		}
-		if !nameOccursAsIdent(sym.Name, sourceCode) && !nameOccursAsIdent(sym.QualifiedName, sourceCode) {
+		if !matched {
 			continue
 		}
 		seen[sym.ID] = true
-		item := sourceSnippet{
-			ID:            sym.ID,
-			Name:          sym.Name,
-			QualifiedName: sym.QualifiedName,
-			Kind:          sym.Kind,
-			File:          sym.File,
-			Line:          sym.Line,
-			Column:        sym.Column,
-			Package:       sym.Package,
-		}
-		if code, err := readSourceSnippet(projectPath, sym.File, sym.Line); err == nil {
-			item.SourceCode = code
-		}
-		out = append(out, item)
+		out = append(out, snippetFromSymbol(reader, sym))
 	}
 	return out
 }
 
-// nameOccursAsIdent returns true if name appears in code at an identifier boundary
-// (not preceded or followed by an identifier character). For dotted names like
-// "pkg.Foo", the dot is allowed inside the match but boundaries still apply at
-// the outer edges.
-func nameOccursAsIdent(name, code string) bool {
-	if name == "" {
-		return false
-	}
-	idx := 0
+// goReferencedNames tokenizes Go source and returns (a) the set of all
+// identifier tokens that appear, and (b) the set of "x.y" qualified names
+// formed by IDENT '.' IDENT sequences. String and comment contents are
+// ignored automatically because go/scanner emits them as STRING/COMMENT
+// tokens, not IDENT.
+func goReferencedNames(src string) (idents, qualified map[string]bool) {
+	idents = make(map[string]bool)
+	qualified = make(map[string]bool)
+
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(src))
+	var s scanner.Scanner
+	s.Init(file, []byte(src), nil, 0)
+
+	var prevIdent string
+	var prevWasDot bool
 	for {
-		rel := strings.Index(code[idx:], name)
-		if rel < 0 {
-			return false
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
 		}
-		i := idx + rel
-		end := i + len(name)
-		var before, after byte = ' ', ' '
-		if i > 0 {
-			before = code[i-1]
+		switch tok {
+		case token.IDENT:
+			idents[lit] = true
+			if prevWasDot && prevIdent != "" {
+				qualified[prevIdent+"."+lit] = true
+			}
+			prevIdent = lit
+			prevWasDot = false
+		case token.PERIOD:
+			prevWasDot = true
+		default:
+			prevIdent = ""
+			prevWasDot = false
 		}
-		if end < len(code) {
-			after = code[end]
-		}
-		if !isIdentByte(before) && !isIdentByte(after) {
-			return true
-		}
-		idx = i + 1
+	}
+	return idents, qualified
+}
+
+func snippetFromSymbol(reader *snippetCache, sym plugin.Symbol) sourceSnippet {
+	item := sourceSnippet{
+		ID:            sym.ID,
+		Name:          sym.Name,
+		QualifiedName: sym.QualifiedName,
+		Kind:          sym.Kind,
+		File:          sym.File,
+		Line:          sym.Line,
+		Column:        sym.Column,
+		Package:       sym.Package,
+	}
+	if code, err := reader.Read(sym.File, sym.Line); err == nil {
+		item.SourceCode = code
+	}
+	return item
+}
+
+// snippetCache memoizes file reads and per-(file,line) snippet extraction so
+// a single handler call doesn't re-open the same file or re-extract the same
+// snippet.
+type snippetCache struct {
+	projectPath string
+	files       map[string]cachedFile
+	snippets    map[string]string
+}
+
+type cachedFile struct {
+	cleanRel string
+	lines    []string
+	err      error
+}
+
+func newSnippetCache(projectPath string) *snippetCache {
+	return &snippetCache{
+		projectPath: projectPath,
+		files:       make(map[string]cachedFile),
+		snippets:    make(map[string]string),
 	}
 }
 
-func isIdentByte(b byte) bool {
-	return (b >= 'a' && b <= 'z') ||
-		(b >= 'A' && b <= 'Z') ||
-		(b >= '0' && b <= '9') ||
-		b == '_'
+func (c *snippetCache) Read(file string, line int) (string, error) {
+	key := file + "\x00" + strconv.Itoa(line)
+	if v, ok := c.snippets[key]; ok {
+		return v, nil
+	}
+	cf, ok := c.files[file]
+	if !ok {
+		cleanRel, lines, err := readProjectFileLines(c.projectPath, file)
+		cf = cachedFile{cleanRel: cleanRel, lines: lines, err: err}
+		c.files[file] = cf
+	}
+	if cf.err != nil {
+		return "", cf.err
+	}
+	code, err := snippetFromLines(cf.lines, filepath.Ext(cf.cleanRel), file, line)
+	if err != nil {
+		return "", err
+	}
+	c.snippets[key] = code
+	return code, nil
 }

@@ -7,14 +7,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 // Coverage holds coverage-related data for a project.
 type Coverage struct {
-	mu        sync.RWMutex
-	cache     map[string]*CoverageData // project path -> data
-	registry  *plugin.Registry
+	mu       sync.RWMutex
+	cache    map[string]*CoverageData // project path -> data
+	registry *plugin.Registry
 }
 
 // CoverageData is the computed coverage for a project.

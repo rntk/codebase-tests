@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 // GoldenCase represents a single golden test case.

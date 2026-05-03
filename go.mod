@@ -1,3 +1,3 @@
-module github.com/review-server
+module github.com/rntk/codebase-tests
 
 go 1.25

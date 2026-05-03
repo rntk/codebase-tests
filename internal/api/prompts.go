@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/review-server/internal/golden"
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
-	"github.com/review-server/internal/prompts"
-	"github.com/review-server/internal/tests"
+	"github.com/rntk/codebase-tests/internal/golden"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
+	"github.com/rntk/codebase-tests/internal/prompts"
+	"github.com/rntk/codebase-tests/internal/tests"
 )
 
 // PromptsHandler returns ready-to-paste test-generation prompts.

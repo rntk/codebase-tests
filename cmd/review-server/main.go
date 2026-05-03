@@ -12,12 +12,12 @@ import (
 
 	"net/http"
 
-	"github.com/review-server/internal/api"
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
-	"github.com/review-server/internal/tests"
-	goplugin "github.com/review-server/plugins/go"
-	pythonplugin "github.com/review-server/plugins/python"
+	"github.com/rntk/codebase-tests/internal/api"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
+	"github.com/rntk/codebase-tests/internal/tests"
+	goplugin "github.com/rntk/codebase-tests/plugins/go"
+	pythonplugin "github.com/rntk/codebase-tests/plugins/python"
 )
 
 func main() {

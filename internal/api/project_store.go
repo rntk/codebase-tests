@@ -3,7 +3,7 @@ package api
 import (
 	"net/url"
 
-	"github.com/review-server/internal/project"
+	"github.com/rntk/codebase-tests/internal/project"
 )
 
 const defaultProjectID = "default"

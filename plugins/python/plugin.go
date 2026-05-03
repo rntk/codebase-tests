@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 // Plugin implements plugin.Plugin for Python using filesystem and source-based discovery.

@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
-	"github.com/review-server/internal/tests"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
+	"github.com/rntk/codebase-tests/internal/tests"
 )
 
 // CoverageHandler implements the coverage endpoint.

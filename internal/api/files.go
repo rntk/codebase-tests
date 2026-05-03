@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/review-server/internal/project"
+	"github.com/rntk/codebase-tests/internal/project"
 )
 
 // FilesHandler implements the file tree endpoint.

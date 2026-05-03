@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
-	"github.com/review-server/internal/tests"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
+	"github.com/rntk/codebase-tests/internal/tests"
 )
 
 // SymbolsHandler implements the symbols endpoint.
@@ -71,19 +71,36 @@ func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, attachSource(data.Symbols, p.Path, withSource))
 }
 
+// maxInlineSourceBytes caps the cumulative size of inline source attached to
+// a single /symbols response so that large projects don't ship megabytes of
+// code. Symbols past the cap omit SourceCode; the client can fetch them
+// individually if needed.
+const maxInlineSourceBytes = 512 * 1024
+
 func attachSource(syms []plugin.Symbol, projectPath string, withSource bool) []symbolWithSource {
 	out := make([]symbolWithSource, len(syms))
+	if !withSource {
+		for i, s := range syms {
+			out[i] = symbolWithSource{Symbol: s}
+		}
+		return out
+	}
+	reader := newSnippetCache(projectPath)
+	budget := maxInlineSourceBytes
 	for i, s := range syms {
 		out[i] = symbolWithSource{Symbol: s}
-		if !withSource {
-			continue
-		}
 		if s.Kind != "function" && s.Kind != "method" {
 			continue
 		}
-		if code, err := readSourceSnippet(projectPath, s.File, s.Line); err == nil {
-			out[i].SourceCode = code
+		if budget <= 0 {
+			continue
 		}
+		code, err := reader.Read(s.File, s.Line)
+		if err != nil {
+			continue
+		}
+		out[i].SourceCode = code
+		budget -= len(code)
 	}
 	return out
 }

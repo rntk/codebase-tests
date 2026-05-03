@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 func sampleRoot(t *testing.T) string {

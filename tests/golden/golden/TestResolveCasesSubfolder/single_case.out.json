@@ -1,0 +1,11 @@
+[
+  {
+    "id": "go:pkg/foo.go:pkg.TestFunc:caseA",
+    "name": "caseA",
+    "inPath": "golden/pkg/TestFunc/caseA/in.json",
+    "outPath": "golden/pkg/TestFunc/caseA/out.json",
+    "metaPath": "golden/pkg/TestFunc/caseA/meta.json",
+    "inExists": true,
+    "outExists": true
+  }
+]

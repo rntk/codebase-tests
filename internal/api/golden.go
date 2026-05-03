@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/review-server/internal/golden"
-	"github.com/review-server/internal/plugin"
-	"github.com/review-server/internal/project"
+	"github.com/rntk/codebase-tests/internal/golden"
+	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/project"
 )
 
 // GoldenHandler implements golden file endpoints.

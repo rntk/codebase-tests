@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getGoldenCase, getGoldenDiff, getTest, listSymbols } from '../api/client.ts'
@@ -13,16 +13,32 @@ function formatRawContent(value: unknown, emptyMessage: string): string {
   return JSON.stringify(value, null, 2) ?? String(value)
 }
 
-function occursAsIdentifier(name: string, code: string): boolean {
-  if (!name) return false
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?<![\\w.])${escaped}(?![\\w])`).test(code)
+// maskRanges returns inclusive-exclusive [start, end) ranges within `code`
+// covering Go-style line comments, block comments, and string literals.
+// Matches inside these ranges should be ignored when highlighting identifiers.
+function maskRanges(code: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const re = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:[^"\\\n]|\\.)*"|`[^`]*`/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(code)) !== null) {
+    ranges.push([m.index, m.index + m[0].length])
+  }
+  return ranges
+}
+
+function isMasked(pos: number, ranges: Array<[number, number]>): boolean {
+  for (const [s, e] of ranges) {
+    if (pos >= s && pos < e) return true
+    if (s > pos) break
+  }
+  return false
 }
 
 function findOccurrences(
   code: string,
   funcs: SourceSnippet[]
 ): Array<{ start: number; end: number; func: SourceSnippet }> {
+  const masked = maskRanges(code)
   const matches: Array<{ start: number; end: number; func: SourceSnippet }> = []
 
   for (const fn of funcs) {
@@ -30,11 +46,15 @@ function findOccurrences(
     if (fn.qualifiedName && fn.qualifiedName !== fn.name) names.add(fn.qualifiedName)
 
     for (const name of names) {
-      // escape regex special chars, then match as identifier (word boundaries)
+      if (!name) continue
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      // Disallow word chars or `.` before (so `pkg.Foo` matches qualifiedName
+      // but plain `Foo` won't match the `.Foo` in `pkg.Foo`); disallow word
+      // chars after. Mirrors backend boundary rules.
       const regex = new RegExp(`(?<![\\w.])${escaped}(?![\\w])`, 'g')
-      let m
+      let m: RegExpExecArray | null
       while ((m = regex.exec(code)) !== null) {
+        if (isMasked(m.index, masked)) continue
         matches.push({ start: m.index, end: m.index + m[0].length, func: fn })
       }
     }
@@ -42,7 +62,6 @@ function findOccurrences(
 
   matches.sort((a, b) => a.start - b.start)
 
-  // remove overlaps, keeping earlier match
   const result: typeof matches = []
   let lastEnd = 0
   for (const m of matches) {
@@ -65,7 +84,7 @@ function InteractiveCode({
   selectedFuncId: string | null
   onFunctionClick: (func: SourceSnippet) => void
 }) {
-  const occurrences = findOccurrences(code, funcs)
+  const occurrences = useMemo(() => findOccurrences(code, funcs), [code, funcs])
   if (!occurrences.length) return <>{code}</>
 
   const segments: ReactNode[] = []
@@ -164,7 +183,7 @@ export function DiffPage() {
   const navigate = useNavigate()
   const [rawMode, setRawMode] = useState(false)
   const [selectedFuncId, setSelectedFuncId] = useState<string | null>(null)
-  const funcEls = useRef<Map<string, HTMLDivElement | null>>(new Map())
+  const funcEls = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const {
     data,
@@ -196,25 +215,25 @@ export function DiffPage() {
     [projectId, rawMode]
   )
 
-  const getFuncRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
-    funcEls.current.set(id, el)
+  const setFuncRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) funcEls.current.set(id, el)
+    else funcEls.current.delete(id)
   }, [])
 
-  const handleFunctionClick = useCallback((func: SourceSnippet) => {
-    setSelectedFuncId(func.id)
-    funcEls.current.get(func.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [])
+  // Highlightable functions in the test source come from the server's
+  // coveredFuncSources, which is already filtered using token-aware matching.
+  // We don't re-derive matches client-side from the full symbol list — that
+  // duplicates server logic and risks divergence.
+  const referencedFuncs: SourceSnippet[] = test?.coveredFuncSources ?? []
 
-  const referencedFuncs = useMemo<SourceSnippet[]>(() => {
-    const code = test?.sourceCode ?? ''
-    if (!code) return []
-    const merged = new Map<string, SourceSnippet>()
-    for (const fn of test?.coveredFuncSources ?? []) merged.set(fn.id, fn)
+  // Symbols not in coveredFuncSources are still selectable from the symbols
+  // panel; this map lets the function-code panel resolve any selected id.
+  const symbolById = useMemo(() => {
+    const m = new Map<string, SourceSnippet>()
+    for (const fn of referencedFuncs) m.set(fn.id, fn)
     for (const s of symbols ?? []) {
-      if (s.kind !== 'function' && s.kind !== 'method') continue
-      if (s.id === test?.id) continue
-      if (merged.has(s.id)) continue
-      merged.set(s.id, {
+      if (m.has(s.id)) continue
+      m.set(s.id, {
         id: s.id,
         name: s.name,
         qualifiedName: s.qualifiedName,
@@ -226,10 +245,23 @@ export function DiffPage() {
         sourceCode: s.sourceCode,
       })
     }
-    return Array.from(merged.values()).filter(
-      (fn) => occursAsIdentifier(fn.name, code) || occursAsIdentifier(fn.qualifiedName, code)
-    )
-  }, [test?.sourceCode, test?.coveredFuncSources, test?.id, symbols])
+    return m
+  }, [referencedFuncs, symbols])
+
+  const selectedFunc = selectedFuncId ? symbolById.get(selectedFuncId) ?? null : null
+
+  // Scroll the function-code panel into view when the selection changes.
+  // This fires AFTER the ref attaches (the panel re-renders with a new id).
+  useEffect(() => {
+    if (!selectedFuncId) return
+    funcEls.current
+      .get(selectedFuncId)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedFuncId])
+
+  const handleFunctionClick = useCallback((func: SourceSnippet) => {
+    setSelectedFuncId(func.id)
+  }, [])
 
   const isNoGit =
     (error?.message?.toLowerCase()?.includes('no git repo') ?? false) ||
@@ -244,24 +276,6 @@ export function DiffPage() {
   const outDiff = data?.outDiff
   const inContent = formatRawContent(content?.in, 'No input content.')
   const outContent = formatRawContent(content?.out, 'No output content.')
-
-  const selectedFunc = (() => {
-    const fromReferenced = referencedFuncs.find((fn) => fn.id === selectedFuncId)
-    if (fromReferenced) return fromReferenced
-    const s = symbols?.find((sym) => sym.id === selectedFuncId)
-    if (!s) return null
-    return {
-      id: s.id,
-      name: s.name,
-      qualifiedName: s.qualifiedName,
-      kind: s.kind,
-      file: s.file,
-      line: s.line,
-      column: s.column,
-      package: s.package,
-      sourceCode: s.sourceCode,
-    }
-  })()
 
   return (
     <div style={{ padding: 16 }}>
@@ -373,9 +387,7 @@ export function DiffPage() {
                           ? ` · ${referencedFuncs.length} function${
                               referencedFuncs.length === 1 ? '' : 's'
                             } — click to view`
-                          : symbolsLoading
-                          ? ' · loading symbols…'
-                          : ' · no symbols matched'
+                          : ' · no referenced functions'
                       }`
                     : undefined
                 }
@@ -392,7 +404,7 @@ export function DiffPage() {
                 )}
               </CodeBlock>
               <CodeBlock
-                blockRef={selectedFunc ? getFuncRef(selectedFunc.id) : undefined}
+                blockRef={selectedFunc ? (el) => setFuncRef(selectedFunc.id, el) : undefined}
                 highlighted={!!selectedFunc}
                 title={
                   selectedFunc
@@ -405,8 +417,6 @@ export function DiffPage() {
                     ? selectedFunc.sourceCode || 'Source code is not available for this symbol.'
                     : referencedFuncs.length
                     ? 'Click a highlighted function in the test code to view its source.'
-                    : symbolsLoading
-                    ? 'Loading symbols…'
                     : 'No referenced functions detected in this test.'
                 }
               />
@@ -456,10 +466,7 @@ export function DiffPage() {
                 return (
                   <div
                     key={sym.id}
-                    onClick={() => {
-                      setSelectedFuncId(sym.id)
-                      funcEls.current.get(sym.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                    }}
+                    onClick={() => setSelectedFuncId(sym.id)}
                     style={{
                       padding: '6px 12px',
                       cursor: 'pointer',

@@ -5,13 +5,13 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 // Discovery caches discovered tests for a project.
 type Discovery struct {
-	mu     sync.RWMutex
-	cache  map[string][]plugin.TestFunc // project path -> tests
+	mu       sync.RWMutex
+	cache    map[string][]plugin.TestFunc // project path -> tests
 	registry *plugin.Registry
 }
 

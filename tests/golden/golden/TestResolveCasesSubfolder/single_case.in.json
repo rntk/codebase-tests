@@ -1,0 +1,15 @@
+{
+  "convention": {
+    "root": "golden",
+    "segmentFunc": "qualifiedName",
+    "caseSegment": "subfolder"
+  },
+  "testId": "go:pkg/foo.go:pkg.TestFunc",
+  "dirs": [
+    "golden/pkg/TestFunc/caseA"
+  ],
+  "files": [
+    {"path": "golden/pkg/TestFunc/caseA/in.json", "content": "{}"},
+    {"path": "golden/pkg/TestFunc/caseA/out.json", "content": "{}"}
+  ]
+}

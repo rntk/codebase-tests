@@ -8,25 +8,34 @@ import (
 )
 
 func readSourceSnippet(projectPath, relFile string, line int) (string, error) {
-	if line <= 0 {
-		return "", fmt.Errorf("invalid source line %d", line)
-	}
-	cleanRel := filepath.Clean(filepath.FromSlash(relFile))
-	if filepath.IsAbs(cleanRel) || cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("invalid source path %q", relFile)
-	}
-	path := filepath.Join(projectPath, cleanRel)
-	data, err := os.ReadFile(path)
+	cleanRel, lines, err := readProjectFileLines(projectPath, relFile)
 	if err != nil {
 		return "", err
 	}
-	lines := strings.SplitAfter(string(data), "\n")
+	return snippetFromLines(lines, filepath.Ext(cleanRel), relFile, line)
+}
+
+func readProjectFileLines(projectPath, relFile string) (string, []string, error) {
+	cleanRel := filepath.Clean(filepath.FromSlash(relFile))
+	if filepath.IsAbs(cleanRel) || cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+		return "", nil, fmt.Errorf("invalid source path %q", relFile)
+	}
+	data, err := os.ReadFile(filepath.Join(projectPath, cleanRel))
+	if err != nil {
+		return "", nil, err
+	}
+	return cleanRel, strings.SplitAfter(string(data), "\n"), nil
+}
+
+func snippetFromLines(lines []string, ext, relFile string, line int) (string, error) {
+	if line <= 0 {
+		return "", fmt.Errorf("invalid source line %d", line)
+	}
 	if len(lines) == 0 || line > len(lines) {
 		return "", fmt.Errorf("source line %d outside %s", line, relFile)
 	}
-
 	start := line - 1
-	end := snippetEnd(lines, start, filepath.Ext(cleanRel))
+	end := snippetEnd(lines, start, ext)
 	return strings.TrimRight(strings.Join(lines[start:end], ""), "\n"), nil
 }
 

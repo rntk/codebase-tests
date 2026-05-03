@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/review-server/internal/lsp"
-	"github.com/review-server/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/lsp"
+	"github.com/rntk/codebase-tests/internal/plugin"
 )
 
 // Plugin implements plugin.Plugin for Go.
@@ -55,12 +56,14 @@ func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error 
 		lspCommand = []string{"gopls"}
 	}
 	if _, err := exec.LookPath(lspCommand[0]); err != nil {
+		log.Printf("go plugin: %s not found in PATH; running in degraded mode (AST-only symbol discovery, no call graph or symbol resolution)", lspCommand[0])
 		return nil
 	}
 
 	rootURI := pathToURI(cfg.ProjectRoot)
 	p.client = lsp.NewClient(lspCommand, rootURI, p.timeout)
 	if err := p.client.Start(ctx); err != nil {
+		log.Printf("go plugin: failed to start LSP client (%v); running in degraded mode", err)
 		p.client = nil
 	}
 	return nil
@@ -158,10 +161,25 @@ func (p *Plugin) DiscoverSymbols(root string) ([]plugin.Symbol, error) {
 	if p.client != nil {
 		syms, err := p.discoverSymbolsFromLSP(root)
 		if err == nil && len(syms) > 0 {
+			p.cacheSymbols(syms)
 			return syms, nil
 		}
+		log.Printf("go plugin: LSP symbol discovery returned %d symbols (err=%v); falling back to AST", len(syms), err)
 	}
-	return p.discoverSymbolsFromAST(root)
+	syms, err := p.discoverSymbolsFromAST(root)
+	if err == nil {
+		p.cacheSymbols(syms)
+	}
+	return syms, err
+}
+
+func (p *Plugin) cacheSymbols(syms []plugin.Symbol) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.symbolsByID = make(map[string]plugin.Symbol, len(syms))
+	for _, s := range syms {
+		p.symbolsByID[s.ID] = s
+	}
 }
 
 func (p *Plugin) discoverSymbolsFromLSP(root string) ([]plugin.Symbol, error) {
@@ -171,6 +189,9 @@ func (p *Plugin) discoverSymbolsFromLSP(root string) ([]plugin.Symbol, error) {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == "vendor" || d.Name() == ".git" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") {
@@ -197,13 +218,6 @@ func (p *Plugin) discoverSymbolsFromLSP(root string) ([]plugin.Symbol, error) {
 		symbols = append(symbols, syms...)
 		return nil
 	})
-
-	p.mu.Lock()
-	p.symbolsByID = make(map[string]plugin.Symbol)
-	for _, s := range symbols {
-		p.symbolsByID[s.ID] = s
-	}
-	p.mu.Unlock()
 
 	return symbols, err
 }
@@ -258,13 +272,6 @@ func (p *Plugin) discoverSymbolsFromAST(root string) ([]plugin.Symbol, error) {
 
 		return nil
 	})
-
-	p.mu.Lock()
-	p.symbolsByID = make(map[string]plugin.Symbol)
-	for _, s := range symbols {
-		p.symbolsByID[s.ID] = s
-	}
-	p.mu.Unlock()
 
 	return symbols, err
 }
