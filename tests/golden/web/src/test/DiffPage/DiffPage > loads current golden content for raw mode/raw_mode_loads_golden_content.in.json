@@ -1,0 +1,75 @@
+{
+  "goldenDiff": {
+    "id": "go:calc/add_test.go:calc.TestAdd:positive",
+    "name": "positive",
+    "inDiff": {
+      "kind": "changed",
+      "children": [
+        {
+          "kind": "changed",
+          "key": "b",
+          "oldValue": 2,
+          "newValue": 3
+        }
+      ]
+    },
+    "outDiff": {
+      "kind": "changed",
+      "children": [
+        {
+          "kind": "changed",
+          "key": "result",
+          "oldValue": 3,
+          "newValue": 4
+        }
+      ]
+    }
+  },
+  "goldenCase": {
+    "id": "go:calc/add_test.go:calc.TestAdd:positive",
+    "name": "positive",
+    "in": {
+      "a": 1,
+      "b": 2
+    },
+    "out": {
+      "result": 3
+    }
+  },
+  "test": {
+    "id": "go:calc/add_test.go:calc.TestAdd",
+    "name": "TestAdd",
+    "file": "calc/add_test.go",
+    "line": 10,
+    "column": 1,
+    "package": "calc",
+    "coveredFuncs": [
+      "go:calc/add.go:calc.Add"
+    ],
+    "sourceCode": "func TestAdd(t *testing.T) {\n\tgot := Add(1, 2)\n}",
+    "coveredFuncSources": [
+      {
+        "id": "go:calc/add.go:calc.Add",
+        "name": "Add",
+        "qualifiedName": "calc.Add",
+        "kind": "function",
+        "file": "calc/add.go",
+        "line": 1,
+        "column": 1,
+        "package": "calc",
+        "sourceCode": "func Add(a, b int) int {\n\treturn a + b\n}"
+      }
+    ]
+  },
+  "symbols": [],
+  "projectId": "default",
+  "testId": "go:calc/add_test.go:calc.TestAdd",
+  "caseId": "go:calc/add_test.go:calc.TestAdd:positive",
+  "interactions": [
+    {
+      "type": "click",
+      "target": "title",
+      "value": "View code: calc.Add"
+    }
+  ]
+}

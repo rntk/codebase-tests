@@ -1,0 +1,54 @@
+{
+  "mockCalls": {
+    "getGoldenCase": {
+      "callCount": 1,
+      "calls": [
+        [
+          "default",
+          "go:calc/add_test.go:calc.TestAdd",
+          "go:calc/add_test.go:calc.TestAdd:positive"
+        ]
+      ]
+    },
+    "getTest": {
+      "callCount": 1,
+      "calls": [
+        [
+          "default",
+          "go:calc/add_test.go:calc.TestAdd"
+        ]
+      ]
+    },
+    "listSymbols": {
+      "callCount": 1,
+      "calls": [
+        [
+          "default",
+          true
+        ]
+      ]
+    }
+  },
+  "domContains": [
+    "Diff: positive",
+    "\"a\": 1",
+    "\"result\": 3",
+    "Test Code: TestAdd",
+    "func TestAdd"
+  ],
+  "domNotContains": [
+    "\"oldValue\""
+  ],
+  "tabs": {
+    "View raw": {
+      "aria-selected": "true"
+    },
+    "Diff": {
+      "present": true
+    }
+  },
+  "domPresentAfterInteraction": [
+    "Function Code: calc.Add",
+    "func Add"
+  ]
+}
