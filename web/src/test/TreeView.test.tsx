@@ -1,5 +1,11 @@
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TreeView } from '../components/TreeView.tsx'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 describe('TreeView', () => {
   const nodes = [
@@ -25,11 +31,28 @@ describe('TreeView', () => {
     expect(screen.queryByText('Child 1')).not.toBeInTheDocument()
   })
 
-  it('calls onSelect when clicking a node', () => {
-    const onSelect = vi.fn()
-    render(<TreeView nodes={nodes} onSelect={onSelect} />)
-    fireEvent.click(screen.getByTestId('tree-item-child1'))
-    expect(onSelect).toHaveBeenCalledWith('child1')
+  describe('calls onSelect when clicking a node', () => {
+    const goldenDir = path.resolve(
+      __dirname,
+      '../../../tests/golden/web/src/test/TreeView',
+    )
+    const cases = fs
+      .readdirSync(goldenDir)
+      .filter((f) => f.startsWith('calls_onSelect_when_clicking_a_node') && f.endsWith('.in.json'))
+      .map((f) => f.replace('.in.json', ''))
+
+    it.each(cases)('%s', (caseName) => {
+      const inFile = path.join(goldenDir, `${caseName}.in.json`)
+      const outFile = path.join(goldenDir, `${caseName}.out.json`)
+      const input = JSON.parse(fs.readFileSync(inFile, 'utf-8'))
+      const expected = JSON.parse(fs.readFileSync(outFile, 'utf-8'))
+
+      const onSelect = vi.fn()
+      render(<TreeView nodes={input.nodes} onSelect={onSelect} />)
+      fireEvent.click(screen.getByTestId(input.clickTarget))
+
+      expect(onSelect).toHaveBeenCalledWith(expected.onSelectCalledWith)
+    })
   })
 
   it('highlights selected node', () => {

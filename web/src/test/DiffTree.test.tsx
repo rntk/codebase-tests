@@ -1,6 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import { DiffTree } from '../components/DiffTree.tsx'
 import type { DiffNode } from '../api/types.ts'
+import * as fs from 'fs'
+import * as path from 'path'
+
+const goldenDir = path.resolve(__dirname, '../../../tests/golden/web/src/test/DiffTree/DiffTree > renders added node')
+
+const caseFiles = fs
+  .readdirSync(goldenDir)
+  .filter((f) => f.endsWith('.in.json'))
+  .map((f) => f.replace('.in.json', ''))
 
 describe('DiffTree', () => {
   it('renders empty state when no root', () => {
@@ -23,11 +32,21 @@ describe('DiffTree', () => {
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
-  it('renders added node', () => {
-    const root: DiffNode = { kind: 'added', key: 'c', newValue: 4 }
-    render(<DiffTree root={root} />)
-    expect(screen.getByText(/c:/)).toBeInTheDocument()
-    expect(screen.getByText('4')).toBeInTheDocument()
+  describe('renders added node', () => {
+    for (const caseName of caseFiles) {
+      it(caseName, () => {
+        const inp = JSON.parse(
+          fs.readFileSync(path.join(goldenDir, `${caseName}.in.json`), 'utf-8')
+        )
+        const exp = JSON.parse(
+          fs.readFileSync(path.join(goldenDir, `${caseName}.out.json`), 'utf-8')
+        )
+
+        const { container } = render(<DiffTree root={inp.root} />)
+        const actual = container.textContent.replace(/\s+/g, ' ').trim()
+        expect(actual).toEqual(exp)
+      })
+    }
   })
 
   it('renders removed node', () => {
