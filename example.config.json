@@ -11,6 +11,11 @@
       "name": "python",
       "language": "python",
       "lspServerAddress": "pylsp"
+    },
+    {
+      "name": "javascript",
+      "language": "typescript",
+      "lspServerAddress": "typescript-language-server --stdio"
     }
   ],
   "goldenRoot": "tests/golden",

@@ -124,7 +124,7 @@ func (r *Registry) Shutdown(ctx context.Context) error {
 
 // ReadyCheck verifies that required external binaries are available in PATH.
 func (r *Registry) ReadyCheck() error {
-	required := []string{"go", "gopls", "git", "pytest", "coverage"}
+	required := []string{"go", "gopls", "git", "pytest", "coverage", "node", "npm", "typescript-language-server"}
 	var missing []string
 	for _, bin := range required {
 		if _, err := exec.LookPath(bin); err != nil {

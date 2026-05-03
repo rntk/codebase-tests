@@ -18,6 +18,7 @@ Before starting a plugin, verify required binaries exist in `PATH`:
 
 - Go plugin: `go`, `gopls`
 - Python plugin: selected LSP (`pylsp` or `pyright-langserver`), `pytest`, `coverage.py`
+- JavaScript plugin: `node`, `npm`, selected LSP (`typescript-language-server --stdio` by default), and the project's configured web test runner (for example Vitest through `npm test`)
 - Git: required for diff features
 
 If a dependency is missing, return a clear error during `Initialize`.

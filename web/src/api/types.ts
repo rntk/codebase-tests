@@ -97,6 +97,12 @@ export interface GoldenCaseDiff {
   outDiff?: DiffNode;
 }
 
+export interface MutationResult {
+  mutation: string;
+  passed: boolean;
+  output: string;
+}
+
 export interface DiffNode {
   kind: 'added' | 'removed' | 'changed' | 'unchanged';
   key?: string | null;

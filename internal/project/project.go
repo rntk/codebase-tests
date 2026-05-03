@@ -70,6 +70,8 @@ func DefaultPluginSettings(name string) PluginSettings {
 	switch name {
 	case "go":
 		return PluginSettings{Name: "go", Language: "go", LSPServerAddress: "gopls"}
+	case "javascript":
+		return PluginSettings{Name: "javascript", Language: "typescript", LSPServerAddress: "typescript-language-server --stdio"}
 	case "python":
 		return PluginSettings{Name: "python", Language: "python", LSPServerAddress: "pylsp"}
 	default:

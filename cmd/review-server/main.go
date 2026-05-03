@@ -17,6 +17,7 @@ import (
 	"github.com/rntk/codebase-tests/internal/project"
 	"github.com/rntk/codebase-tests/internal/tests"
 	goplugin "github.com/rntk/codebase-tests/plugins/go"
+	javascriptplugin "github.com/rntk/codebase-tests/plugins/javascript"
 	pythonplugin "github.com/rntk/codebase-tests/plugins/python"
 )
 
@@ -59,6 +60,8 @@ func main() {
 		switch cfg.Name {
 		case "go":
 			registry.Register(goplugin.New())
+		case "javascript":
+			registry.Register(javascriptplugin.New())
 		case "python":
 			registry.Register(pythonplugin.New())
 		default:
@@ -99,7 +102,7 @@ func main() {
 	fh.RegisterRoutes(r)
 	fh.SetProject(p)
 
-	gh := api.NewGoldenHandler()
+	gh := api.NewGoldenHandler(registry)
 	gh.RegisterRoutes(r)
 	gh.SetProject(p)
 

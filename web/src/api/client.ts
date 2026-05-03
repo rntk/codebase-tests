@@ -6,6 +6,7 @@ import type {
   GoldenCase,
   GoldenCaseContent,
   GoldenCaseDiff,
+  MutationResult,
   CoverageReport,
   TestPrompt,
 } from './types.ts'
@@ -28,7 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (USE_MOCK) {
     const mock = getMockResponse<T>(path)
     if (mock !== undefined) {
@@ -37,7 +38,7 @@ async function apiFetch<T>(path: string): Promise<T> {
     throw new ApiError('Not found in mock data', 404)
   }
 
-  const res = await fetch(`${API_BASE}${path}`)
+  const res = await fetch(`${API_BASE}${path}`, options)
   if (!res.ok) {
     if (res.status === 501) {
       throw new ApiError('This feature is not implemented yet.', 501)
@@ -83,6 +84,12 @@ export function getGoldenCase(projectId: string, testId: string, caseId: string)
 
 export function getGoldenDiff(projectId: string, testId: string, caseId: string): Promise<GoldenCaseDiff> {
   return apiFetch(`/api/projects/${pathSegment(projectId)}/tests/${pathSegment(testId)}/golden/${pathSegment(caseId)}/diff`)
+}
+
+export function mutateGoldenCase(projectId: string, testId: string, caseId: string): Promise<MutationResult[]> {
+  return apiFetch(`/api/projects/${pathSegment(projectId)}/tests/${pathSegment(testId)}/golden/${pathSegment(caseId)}/mutate`, {
+    method: 'POST'
+  })
 }
 
 export function getCoverage(projectId: string): Promise<CoverageReport> {

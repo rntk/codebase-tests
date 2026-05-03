@@ -13,12 +13,16 @@ import (
 
 // GoldenHandler implements golden file endpoints.
 type GoldenHandler struct {
-	store map[string]*project.Project
+	store    map[string]*project.Project
+	registry *plugin.Registry
 }
 
-// NewGoldenHandler creates a new handler with an empty store.
-func NewGoldenHandler() *GoldenHandler {
-	return &GoldenHandler{store: make(map[string]*project.Project)}
+// NewGoldenHandler creates a new handler.
+func NewGoldenHandler(registry *plugin.Registry) *GoldenHandler {
+	return &GoldenHandler{
+		store:    make(map[string]*project.Project),
+		registry: registry,
+	}
 }
 
 // SetProject registers a project in the store.
@@ -31,6 +35,7 @@ func (h *GoldenHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden", h.ListCases)
 	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden/{caseId}", h.GetCase)
 	r.HandleFunc("GET /projects/{id}/tests/{testId}/golden/{caseId}/diff", h.DiffCase)
+	r.HandleFunc("POST /projects/{id}/tests/{testId}/golden/{caseId}/mutate", h.MutateCase)
 }
 
 func (h *GoldenHandler) getProject(w http.ResponseWriter, r *http.Request) *project.Project {
@@ -41,6 +46,99 @@ func (h *GoldenHandler) getProject(w http.ResponseWriter, r *http.Request) *proj
 		return nil
 	}
 	return p
+}
+
+// MutateCase runs mutation tests for a single golden case.
+func (h *GoldenHandler) MutateCase(w http.ResponseWriter, r *http.Request) {
+	p := h.getProject(w, r)
+	if p == nil {
+		return
+	}
+	testId := pathParam(r.PathValue("testId"))
+	caseId := pathParam(r.PathValue("caseId"))
+
+	conv := defaultConvention(p)
+	cases, err := golden.ResolveCases(p.Path, testId, conv)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var gc *golden.GoldenCase
+	for i := range cases {
+		if cases[i].ID == caseId || cases[i].Name == caseId {
+			gc = &cases[i]
+			break
+		}
+	}
+	if gc == nil {
+		http.Error(w, "case not found", http.StatusNotFound)
+		return
+	}
+
+	if !gc.InExists {
+		http.Error(w, "input file not found", http.StatusBadRequest)
+		return
+	}
+
+	data, err := os.ReadFile(gc.InPath)
+	if err != nil {
+		http.Error(w, "read input: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	mutations, err := golden.MutateJSON(data)
+	if err != nil {
+		http.Error(w, "generate mutations: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pluginName, _, _, _, _ := golden.ParseTestID(testId)
+	pl, err := h.registry.For(pluginName)
+	if err != nil {
+		http.Error(w, "plugin not found: "+pluginName, http.StatusInternalServerError)
+		return
+	}
+
+	// Backup original file
+	original := make([]byte, len(data))
+	copy(original, data)
+	defer func() {
+		_ = os.WriteFile(gc.InPath, original, 0644)
+	}()
+
+	results := make([]golden.MutationResult, 0, len(mutations))
+	for _, m := range mutations {
+		if err := os.WriteFile(gc.InPath, m.Data, 0644); err != nil {
+			results = append(results, golden.MutationResult{
+				Mutation: m.Description,
+				Passed:   false,
+				Output:   "failed to write mutated file: " + err.Error(),
+			})
+			continue
+		}
+
+		res, err := pl.RunTests(r.Context(), plugin.TestSelection{
+			TestIDs: []string{testId},
+		}, defaultRunOptions(p))
+
+		passed := false
+		output := ""
+		if err != nil {
+			output = err.Error()
+		} else {
+			passed = res.Passed
+			output = res.Output
+		}
+
+		results = append(results, golden.MutationResult{
+			Mutation: m.Description,
+			Passed:   passed,
+			Output:   output,
+		})
+	}
+
+	respondJSON(w, results)
 }
 
 // ListCases returns all golden cases for a test.

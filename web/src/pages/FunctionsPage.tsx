@@ -4,6 +4,7 @@ import { listSymbols, getSymbolTestPrompt } from '../api/client.ts'
 import type { Symbol, TestPrompt } from '../api/types.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { TreeView, type TreeNode } from '../components/TreeView.tsx'
+import { languageFromId, languageIcon, languageLabel } from '../api/ids.ts'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
@@ -19,21 +20,44 @@ function groupByFile(symbols: Symbol[]): Map<string, Symbol[]> {
   return map
 }
 
+function groupByLanguage(symbols: Symbol[]): Map<string, Symbol[]> {
+  const map = new Map<string, Symbol[]>()
+  for (const s of symbols) {
+    const lang = languageFromId(s.id)
+    const list = map.get(lang) || []
+    list.push(s)
+    map.set(lang, list)
+  }
+  return map
+}
+
 function toTreeNodes(symbols: Symbol[]): TreeNode[] {
-  const byFile = groupByFile(symbols)
-  return Array.from(byFile.entries()).map(([file, syms]) => ({
-    id: `file:${file}`,
-    label: <span>📁 {file}</span>,
-    children: syms.map((s) => ({
-      id: s.id,
+  const byLanguage = groupByLanguage(symbols)
+  const languages = Array.from(byLanguage.keys()).sort()
+  return languages.map((language) => {
+    const byFile = groupByFile(byLanguage.get(language)!)
+    return {
+      id: `lang:${language}`,
       label: (
         <span>
-          {s.covered ? '✅' : '⚠️'}{' '}
-          <span style={{ color: s.covered ? 'inherit' : '#c62828' }}>{s.name}</span>
+          {languageIcon(language)} {languageLabel(language)}
         </span>
       ),
-    })),
-  }))
+      children: Array.from(byFile.entries()).map(([file, syms]) => ({
+        id: `file:${language}:${file}`,
+        label: <span>📁 {file}</span>,
+        children: syms.map((s) => ({
+          id: s.id,
+          label: (
+            <span>
+              {s.covered ? '✅' : '⚠️'}{' '}
+              <span style={{ color: s.covered ? 'inherit' : '#c62828' }}>{s.name}</span>
+            </span>
+          ),
+        })),
+      })),
+    }
+  })
 }
 
 export function FunctionsPage() {
@@ -78,7 +102,7 @@ export function FunctionsPage() {
           nodes={tree}
           selectedId={symbolId}
           onSelect={(id) => {
-            if (!id.startsWith('file:')) {
+            if (!id.startsWith('file:') && !id.startsWith('lang:')) {
               navigate(`/projects/${projectId}/functions/${encodeURIComponent(id)}`)
             }
           }}

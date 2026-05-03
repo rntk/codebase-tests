@@ -2,11 +2,8 @@
   "version": 1,
   "name": "workspace",
   "plugins": [
-    {
-      "name": "go",
-      "language": "go",
-      "lspServerAddress": "gopls"
-    }
+    { "name": "go",         "language": "go",         "lspServerAddress": "gopls" },
+    { "name": "javascript", "language": "typescript", "lspServerAddress": "typescript-language-server --stdio" }
   ],
   "goldenRoot": "tests/golden",
   "toolTimeoutSeconds": 30

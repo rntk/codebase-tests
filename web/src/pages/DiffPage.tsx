@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { getGoldenCase, getGoldenDiff, getTest, listSymbols } from '../api/client.ts'
+import { getGoldenCase, getGoldenDiff, getTest, listSymbols, mutateGoldenCase } from '../api/client.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { DiffTree } from '../components/DiffTree.tsx'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
-import type { GoldenCaseContent, TestFunc, SourceSnippet, Symbol, DiffNode } from '../api/types.ts'
+import type { GoldenCaseContent, TestFunc, SourceSnippet, Symbol, DiffNode, MutationResult } from '../api/types.ts'
 
 function formatRawContent(value: unknown, emptyMessage: string): string {
   if (value === undefined) return emptyMessage
@@ -193,6 +193,10 @@ export function DiffPage() {
   const [selectedFuncId, setSelectedFuncId] = useState<string | null>(null)
   const funcEls = useRef<Map<string, HTMLDivElement>>(new Map())
 
+  const [mutationResults, setMutationResults] = useState<MutationResult[] | null>(null)
+  const [mutationLoading, setMutationLoading] = useState(false)
+  const [mutationError, setMutationError] = useState<Error | null>(null)
+
   const {
     data,
     loading,
@@ -294,6 +298,20 @@ export function DiffPage() {
   const inContent = formatRawContent(content?.in, 'No input content.')
   const outContent = formatRawContent(content?.out, 'No output content.')
 
+  async function handleMutate() {
+    setMutationLoading(true)
+    setMutationError(null)
+    setMutationResults(null)
+    try {
+      const res = await mutateGoldenCase(projectId!, testId!, caseId!)
+      setMutationResults(res)
+    } catch (e) {
+      setMutationError(e as Error)
+    } finally {
+      setMutationLoading(false)
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
       <button
@@ -350,6 +368,19 @@ export function DiffPage() {
             )}
           </div>
           <button
+            onClick={handleMutate}
+            disabled={mutationLoading}
+            style={{
+              padding: '6px 12px',
+              cursor: 'pointer',
+              background: '#fff',
+              border: '1px solid #ccc',
+              borderRadius: 4,
+            }}
+          >
+            Mutate
+          </button>
+          <button
             onClick={() => refetchDiff()}
             style={{
               padding: '6px 12px',
@@ -363,6 +394,47 @@ export function DiffPage() {
           </button>
         </div>
       </div>
+
+      {(mutationLoading || mutationResults || mutationError) && (
+        <div style={{ 
+          marginTop: 16, 
+          padding: 12, 
+          background: '#f9f9f9', 
+          border: '1px solid #ddd', 
+          borderRadius: 4,
+          fontSize: 13 
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h5 style={{ margin: 0 }}>Mutation Results</h5>
+            <button onClick={() => { setMutationResults(null); setMutationError(null); }} style={{ cursor: 'pointer', fontSize: 11 }}>Close</button>
+          </div>
+          
+          {mutationLoading && <LoadingState message="Running mutation tests..." />}
+          {mutationError && <ErrorState error={mutationError} />}
+          {mutationResults && (
+            <div style={{ maxHeight: 300, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
+                    <th style={{ padding: 4 }}>Mutation</th>
+                    <th style={{ padding: 4 }}>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mutationResults.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: 4 }}>{r.mutation}</td>
+                      <td style={{ padding: 4, color: r.passed ? '#d32f2f' : '#2e7d32' }}>
+                        {r.passed ? '❌ Passed (Good test should fail)' : '✅ Failed (Expected)'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {isNoGit && (
         <div

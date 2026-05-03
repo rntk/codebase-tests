@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { listTests, listGoldenCases, getTestTestPrompt, getGoldenDiff } from '../api/client.ts'
-import type { TestFunc, TestCase, GoldenCase, TestPrompt, DiffNode, GoldenCaseDiff } from '../api/types.ts'
+import { listTests, listGoldenCases, getTestTestPrompt, getGoldenDiff, mutateGoldenCase } from '../api/client.ts'
+import type { TestFunc, TestCase, GoldenCase, TestPrompt, DiffNode, GoldenCaseDiff, MutationResult } from '../api/types.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { TreeView, type TreeNode } from '../components/TreeView.tsx'
+import { languageFromId, languageIcon, languageLabel } from '../api/ids.ts'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
@@ -15,6 +16,17 @@ function groupByFile(tests: TestFunc[]): Map<string, TestFunc[]> {
     const list = map.get(t.file) || []
     list.push(t)
     map.set(t.file, list)
+  }
+  return map
+}
+
+function groupByLanguage(tests: TestFunc[]): Map<string, TestFunc[]> {
+  const map = new Map<string, TestFunc[]>()
+  for (const t of tests) {
+    const lang = languageFromId(t.id)
+    const list = map.get(lang) || []
+    list.push(t)
+    map.set(lang, list)
   }
   return map
 }
@@ -34,26 +46,38 @@ function hasGoldenDiff(diff?: GoldenCaseDiff | null): boolean {
 }
 
 function toTreeNodes(tests: TestFunc[]): TreeNode[] {
-  const byFile = groupByFile(tests)
-  return Array.from(byFile.entries()).map(([file, funcs]) => ({
-    id: `file:${file}`,
-    label: <span>📁 {file}</span>,
-    children: funcs.map((t) => ({
-      id: t.id,
-      label: <span>🧪 {t.name}</span>,
-      marker: hasGoldenTestData(t)
-        ? {
-            kind: 'success',
-            label: 'Has golden test data',
-            title: 'Golden test data found',
-          }
-        : undefined,
-      children: t.subCases?.map((c: TestCase) => ({
-        id: c.id,
-        label: <span>📂 {c.name}</span>,
+  const byLanguage = groupByLanguage(tests)
+  const languages = Array.from(byLanguage.keys()).sort()
+  return languages.map((language) => {
+    const byFile = groupByFile(byLanguage.get(language)!)
+    return {
+      id: `lang:${language}`,
+      label: (
+        <span>
+          {languageIcon(language)} {languageLabel(language)}
+        </span>
+      ),
+      children: Array.from(byFile.entries()).map(([file, funcs]) => ({
+        id: `file:${language}:${file}`,
+        label: <span>📁 {file}</span>,
+        children: funcs.map((t) => ({
+          id: t.id,
+          label: <span>🧪 {t.name}</span>,
+          marker: hasGoldenTestData(t)
+            ? {
+                kind: 'success',
+                label: 'Has golden test data',
+                title: 'Golden test data found',
+              }
+            : undefined,
+          children: t.subCases?.map((c: TestCase) => ({
+            id: c.id,
+            label: <span>📂 {c.name}</span>,
+          })),
+        })),
       })),
-    })),
-  }))
+    }
+  })
 }
 
 function GoldenCaseListItem({
@@ -61,13 +85,15 @@ function GoldenCaseListItem({
   testId,
   goldenCase,
   refreshToken,
+  onMutate,
 }: {
   projectId: string
   testId: string
   goldenCase: GoldenCase
   refreshToken: number
+  onMutate: () => void
 }) {
-  const { data: diff, loading: diffLoading, error: diffError } = useApi(
+  const { data: diff, loading: diffLoading } = useApi(
     () => getGoldenDiff(projectId, testId, goldenCase.id),
     [projectId, testId, goldenCase.id, refreshToken]
   )
@@ -75,71 +101,56 @@ function GoldenCaseListItem({
   const changed = hasGoldenDiff(diff)
 
   return (
-    <li style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-      <Link to={caseUrl} style={{ color: '#1976d2', textDecoration: 'none' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+      <Link to={caseUrl} style={{ color: '#1976d2', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {goldenCase.name}
       </Link>
-      {changed && (
-        <Link
-          to={`${caseUrl}?tab=diff`}
-          aria-label={`${goldenCase.name} has changes`}
-          title="View diff"
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMutate(); }}
           style={{
-            color: '#856404',
-            background: '#fff3cd',
-            border: '1px solid #ffe082',
-            width: 18,
-            height: 18,
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 700,
-            lineHeight: 1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textDecoration: 'none',
-            flex: '0 0 auto',
+            padding: '2px 8px',
+            cursor: 'pointer',
+            background: '#fff',
+            border: '1px solid #ccc',
+            borderRadius: 4,
+            fontSize: 11,
           }}
         >
-          Δ
-        </Link>
-      )}
-      {!changed && diffLoading && (
-        <span
-          aria-label={`Checking ${goldenCase.name} for changes`}
-          title="Checking for changes"
-          style={{ fontSize: 12, color: '#888' }}
-        >
-          …
+          Mutate
+        </button>
+        {changed && (
+          <Link
+            to={`${caseUrl}?tab=diff`}
+            aria-label={`${goldenCase.name} has changes`}
+            title="View diff"
+            style={{
+              color: '#856404',
+              background: '#fff3cd',
+              border: '1px solid #ffe082',
+              width: 18,
+              height: 18,
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+            }}
+          >
+            Δ
+          </Link>
+        )}
+        {!changed && diffLoading && (
+          <span style={{ fontSize: 12, color: '#888' }}>…</span>
+        )}
+        <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>
+          {goldenCase.inExists ? 'in' : 'no-in'} / {goldenCase.outExists ? 'out' : 'no-out'}
         </span>
-      )}
-      {diffError && (
-        <span
-          aria-label={`Could not check ${goldenCase.name} for changes`}
-          title={diffError.message}
-          style={{
-            color: '#b45309',
-            background: '#fffbeb',
-            border: '1px solid #fcd34d',
-            width: 18,
-            height: 18,
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 700,
-            lineHeight: 1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: '0 0 auto',
-          }}
-        >
-          !
-        </span>
-      )}
-      <span style={{ fontSize: 12, color: '#888' }}>
-        {goldenCase.inExists ? '✅ in' : '❌ in'} / {goldenCase.outExists ? '✅ out' : '❌ out'}
-      </span>
-    </li>
+      </div>
+    </div>
   )
 }
 
@@ -153,6 +164,36 @@ function GoldenCaseList({
   cases: GoldenCase[]
 }) {
   const [refreshToken, setRefreshToken] = useState(0)
+  const [mutationResults, setMutationResults] = useState<{caseId: string, results: MutationResult[]} | null>(null)
+  const [mutationLoading, setMutationLoading] = useState(false)
+  const [mutationError, setMutationError] = useState<Error | null>(null)
+
+  const treeNodes: TreeNode[] = useMemo(() => {
+    return cases.map(c => ({
+      id: c.id,
+      label: (
+        <GoldenCaseListItem 
+          projectId={projectId} 
+          testId={testId} 
+          goldenCase={c} 
+          refreshToken={refreshToken}
+          onMutate={async () => {
+            setMutationLoading(true)
+            setMutationError(null)
+            setMutationResults(null)
+            try {
+              const res = await mutateGoldenCase(projectId, testId, c.id)
+              setMutationResults({ caseId: c.id, results: res })
+            } catch (e) {
+              setMutationError(e as Error)
+            } finally {
+              setMutationLoading(false)
+            }
+          }}
+        />
+      )
+    }))
+  }, [cases, projectId, testId, refreshToken])
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -177,17 +218,50 @@ function GoldenCaseList({
       {cases.length === 0 ? (
         <EmptyState message="No golden cases." />
       ) : (
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
-          {cases.map((c) => (
-            <GoldenCaseListItem
-              key={c.id}
-              projectId={projectId}
-              testId={testId}
-              goldenCase={c}
-              refreshToken={refreshToken}
-            />
-          ))}
-        </ul>
+        <div style={{ border: '1px solid #eee', borderRadius: 4 }}>
+          <TreeView nodes={treeNodes} />
+        </div>
+      )}
+
+      {(mutationLoading || mutationResults || mutationError) && (
+        <div style={{ 
+          marginTop: 16, 
+          padding: 12, 
+          background: '#f9f9f9', 
+          border: '1px solid #ddd', 
+          borderRadius: 4,
+          fontSize: 13 
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h5 style={{ margin: 0 }}>Mutation Results {mutationResults?.caseId && `for ${mutationResults.caseId}`}</h5>
+            <button onClick={() => { setMutationResults(null); setMutationError(null); }} style={{ cursor: 'pointer', fontSize: 11 }}>Close</button>
+          </div>
+          
+          {mutationLoading && <LoadingState message="Running mutation tests..." />}
+          {mutationError && <ErrorState error={mutationError} />}
+          {mutationResults && (
+            <div style={{ maxHeight: 300, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
+                    <th style={{ padding: 4 }}>Mutation</th>
+                    <th style={{ padding: 4 }}>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mutationResults.results.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: 4 }}>{r.mutation}</td>
+                      <td style={{ padding: 4, color: r.passed ? '#d32f2f' : '#2e7d32' }}>
+                        {r.passed ? '❌ Passed (Good test should fail)' : '✅ Failed (Expected)'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -240,7 +314,7 @@ export function TestsPage() {
           nodes={tree}
           selectedId={testId}
           onSelect={(id) => {
-            if (!id.startsWith('file:')) {
+            if (!id.startsWith('file:') && !id.startsWith('lang:')) {
               navigate(`/projects/${projectId}/tests/${encodeURIComponent(id)}`)
             }
           }}

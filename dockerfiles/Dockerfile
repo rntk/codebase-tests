@@ -28,8 +28,16 @@ ARG GOPLS_VERSION
 RUN GOBIN=/out go install golang.org/x/tools/gopls@${GOPLS_VERSION}
 
 FROM golang:${GO_VERSION}-bookworm AS runtime
+ARG NODE_VERSION
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates git python3 python3-pytest python3-coverage \
+	&& apt-get install -y --no-install-recommends ca-certificates curl git gnupg python3 python3-pytest python3-coverage \
+	&& mkdir -p /etc/apt/keyrings \
+	&& curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+	&& echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_VERSION}.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+	&& apt-get update \
+	&& apt-get install -y --no-install-recommends nodejs \
+	&& npm install -g typescript typescript-language-server \
+	&& apt-get purge -y curl gnupg && apt-get autoremove -y \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY --from=go-build /out/review-server /usr/local/bin/review-server

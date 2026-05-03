@@ -85,6 +85,19 @@ func TestLoadProjectLegacyPluginNames(t *testing.T) {
 	}
 }
 
+func TestDefaultPluginSettingsJavaScript(t *testing.T) {
+	cfg := DefaultPluginSettings("javascript")
+	if cfg.Name != "javascript" {
+		t.Fatalf("name = %q, want javascript", cfg.Name)
+	}
+	if cfg.Language != "typescript" {
+		t.Fatalf("language = %q, want typescript", cfg.Language)
+	}
+	if cfg.LSPServerAddress != "typescript-language-server --stdio" {
+		t.Fatalf("lsp = %q, want typescript-language-server --stdio", cfg.LSPServerAddress)
+	}
+}
+
 func TestInitProjectValidation(t *testing.T) {
 	tmp := t.TempDir()
 	_, err := InitProject(tmp, InitOptions{
