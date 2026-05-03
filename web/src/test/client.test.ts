@@ -1,4 +1,4 @@
-import { getTestTestPrompt } from '../api/client.ts'
+import { getTestTestPrompt, listSymbols } from '../api/client.ts'
 
 describe('api client', () => {
   afterEach(() => {
@@ -22,7 +22,22 @@ describe('api client', () => {
     await getTestTestPrompt('default', 'go:calc/add_test.go:calc.TestAdd')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/default/tests/go%253Acalc%252Fadd_test.go%253Acalc.TestAdd/test-prompt'
+      '/api/projects/default/tests/go%253Acalc%252Fadd_test.go%253Acalc.TestAdd/test-prompt',
+      undefined
+    )
+  })
+
+  it('passes symbol language and source flags as query parameters', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    } as unknown as Response)
+
+    await listSymbols('default', true, 'go')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/default/symbols?withSource=true&language=go',
+      undefined
     )
   })
 })

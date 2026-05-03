@@ -130,7 +130,7 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var symbols []plugin.Symbol
 	if registry != nil {
 		if syms, err := tests.DiscoverSymbols(registry, p.Path); err == nil {
-			symbols = syms
+			symbols = symbolsForLanguage(syms, languageFromID(t.ID))
 		}
 	}
 	reader := newSnippetCache(p.Path)

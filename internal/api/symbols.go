@@ -47,11 +47,13 @@ func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	withSource := r.URL.Query().Get("withSource") == "true"
+	language := r.URL.Query().Get("language")
 
 	data, err := h.coverage.Build(r.Context(), p.Path, defaultRunOptions(p))
 	if err != nil {
 		// Fallback to symbol discovery without coverage
 		syms, _ := tests.DiscoverSymbols(h.coverage.Registry(), p.Path)
+		syms = symbolsForLanguage(syms, language)
 		if syms == nil {
 			syms = []plugin.Symbol{}
 		}
@@ -68,7 +70,20 @@ func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
 			data.Symbols[i].Covered = true
 		}
 	}
-	respondJSON(w, attachSource(data.Symbols, p.Path, withSource))
+	respondJSON(w, attachSource(symbolsForLanguage(data.Symbols, language), p.Path, withSource))
+}
+
+func symbolsForLanguage(syms []plugin.Symbol, language string) []plugin.Symbol {
+	if language == "" {
+		return syms
+	}
+	out := make([]plugin.Symbol, 0, len(syms))
+	for _, sym := range syms {
+		if languageFromID(sym.ID) == language {
+			out = append(out, sym)
+		}
+	}
+	return out
 }
 
 // maxInlineSourceBytes caps the cumulative size of inline source attached to

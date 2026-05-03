@@ -7,6 +7,7 @@ import { DiffTree } from '../components/DiffTree.tsx'
 import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
 import type { GoldenCaseContent, TestFunc, SourceSnippet, Symbol, DiffNode, MutationResult } from '../api/types.ts'
+import { languageFromId, languageLabel } from '../api/ids.ts'
 
 function formatRawContent(value: unknown, emptyMessage: string): string {
   if (value === undefined) return emptyMessage
@@ -190,6 +191,8 @@ export function DiffPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') === 'diff' ? 'diff' : 'raw'
   const shouldLoadRaw = requestedTab === 'raw'
+  const currentLanguage = testId ? languageFromId(testId) : 'unknown'
+  const symbolLanguage = currentLanguage === 'unknown' ? undefined : currentLanguage
   const [selectedFuncId, setSelectedFuncId] = useState<string | null>(null)
   const funcEls = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -224,8 +227,8 @@ export function DiffPage() {
     loading: symbolsLoading,
     error: symbolsError,
   } = useApi(
-    () => (shouldLoadRaw ? listSymbols(projectId!, true) : Promise.resolve(null as Symbol[] | null)),
-    [projectId, shouldLoadRaw]
+    () => (shouldLoadRaw ? listSymbols(projectId!, true, symbolLanguage) : Promise.resolve(null as Symbol[] | null)),
+    [projectId, shouldLoadRaw, symbolLanguage]
   )
 
   const setFuncRef = useCallback((id: string, el: HTMLDivElement | null) => {
@@ -237,14 +240,25 @@ export function DiffPage() {
   // coveredFuncSources, which is already filtered using token-aware matching.
   // We don't re-derive matches client-side from the full symbol list — that
   // duplicates server logic and risks divergence.
-  const referencedFuncs: SourceSnippet[] = test?.coveredFuncSources ?? []
+  const referencedFuncs: SourceSnippet[] = useMemo(
+    () =>
+      (test?.coveredFuncSources ?? []).filter(
+        (fn) => !symbolLanguage || languageFromId(fn.id) === symbolLanguage
+      ),
+    [test?.coveredFuncSources, symbolLanguage]
+  )
+
+  const languageSymbols = useMemo(
+    () => (symbols ?? []).filter((sym) => !symbolLanguage || languageFromId(sym.id) === symbolLanguage),
+    [symbols, symbolLanguage]
+  )
 
   // Symbols not in coveredFuncSources are still selectable from the symbols
   // panel; this map lets the function-code panel resolve any selected id.
   const symbolById = useMemo(() => {
     const m = new Map<string, SourceSnippet>()
     for (const fn of referencedFuncs) m.set(fn.id, fn)
-    for (const s of symbols ?? []) {
+    for (const s of languageSymbols) {
       if (m.has(s.id)) continue
       m.set(s.id, {
         id: s.id,
@@ -259,9 +273,15 @@ export function DiffPage() {
       })
     }
     return m
-  }, [referencedFuncs, symbols])
+  }, [referencedFuncs, languageSymbols])
 
   const selectedFunc = selectedFuncId ? symbolById.get(selectedFuncId) ?? null : null
+
+  useEffect(() => {
+    if (selectedFuncId && !symbolById.has(selectedFuncId)) {
+      setSelectedFuncId(null)
+    }
+  }, [selectedFuncId, symbolById])
 
   // Scroll the function-code panel into view when the selection changes.
   // This fires AFTER the ref attaches (the panel re-renders with a new id).
@@ -580,9 +600,14 @@ export function DiffPage() {
             }}
           >
             Symbols
-            {symbols && symbols.length > 0 && (
+            {symbolLanguage && (
               <span style={{ color: '#777', fontWeight: 400, fontSize: 12 }}>
-                {symbols.length} total
+                {languageLabel(symbolLanguage)}
+              </span>
+            )}
+            {languageSymbols.length > 0 && (
+              <span style={{ color: '#777', fontWeight: 400, fontSize: 12 }}>
+                {languageSymbols.length} total
               </span>
             )}
           </div>
@@ -593,8 +618,8 @@ export function DiffPage() {
               <pre style={{ padding: 12, margin: 0, fontSize: 12, color: '#dc2626' }}>
                 Error loading symbols: {symbolsError.message}
               </pre>
-            ) : symbols && symbols.length > 0 ? (
-              symbols.map((sym) => {
+            ) : languageSymbols.length > 0 ? (
+              languageSymbols.map((sym) => {
                 const isSelected = selectedFuncId === sym.id
                 return (
                   <div

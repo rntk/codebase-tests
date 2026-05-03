@@ -61,9 +61,12 @@ export function listFiles(projectId: string): Promise<FileNode[]> {
   return apiFetch(`/api/projects/${pathSegment(projectId)}/files`)
 }
 
-export function listSymbols(projectId: string, withSource = false): Promise<Symbol[]> {
-  const qs = withSource ? '?withSource=true' : ''
-  return apiFetch(`/api/projects/${pathSegment(projectId)}/symbols${qs}`)
+export function listSymbols(projectId: string, withSource = false, language?: string): Promise<Symbol[]> {
+  const qs = new URLSearchParams()
+  if (withSource) qs.set('withSource', 'true')
+  if (language) qs.set('language', language)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return apiFetch(`/api/projects/${pathSegment(projectId)}/symbols${suffix}`)
 }
 
 export function listTests(projectId: string): Promise<TestFunc[]> {

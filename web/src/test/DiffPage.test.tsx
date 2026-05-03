@@ -64,7 +64,7 @@ describe('DiffPage', () => {
             'go:calc/add_test.go:calc.TestAdd:positive'
           )
           expect(getTest).toHaveBeenCalledWith('default', 'go:calc/add_test.go:calc.TestAdd')
-          expect(listSymbols).toHaveBeenCalledWith('default', true)
+          expect(listSymbols).toHaveBeenCalledWith('default', true, 'go')
         })
 
         for (const text of exp.domContains) {
