@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/review-server/internal/golden"
 	"github.com/review-server/internal/plugin"
@@ -91,7 +92,11 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if code, err := readSourceSnippet(p.Path, t.File, t.Line); err == nil {
 		resp.SourceCode = code
 	}
-	resp.CoveredFuncSources = coveredFunctionSources(p.Path, h.discovery.Registry(), t.CoveredFuncs)
+	if covered := coveredFunctionSources(p.Path, h.discovery.Registry(), t.CoveredFuncs); len(covered) > 0 {
+		resp.CoveredFuncSources = covered
+	} else {
+		resp.CoveredFuncSources = referencedSymbolSources(p.Path, h.discovery.Registry(), resp.SourceCode, t.ID)
+	}
 	for _, c := range t.SubCases {
 		resp.SubCases = append(resp.SubCases, goldenTestCaseRef{
 			ID:       c.ID,
@@ -156,4 +161,86 @@ func coveredFunctionSources(projectPath string, registry *plugin.Registry, cover
 		out = append(out, item)
 	}
 	return out
+}
+
+// referencedSymbolSources scans the given test source code for any LSP symbols
+// (functions or methods) whose name is referenced lexically. Used as a fallback
+// when t.CoveredFuncs is unpopulated by the language plugin.
+func referencedSymbolSources(projectPath string, registry *plugin.Registry, sourceCode, testID string) []sourceSnippet {
+	if sourceCode == "" || registry == nil {
+		return nil
+	}
+	symbols, err := tests.DiscoverSymbols(registry, projectPath)
+	if err != nil {
+		return nil
+	}
+	var out []sourceSnippet
+	seen := make(map[string]bool)
+	for _, sym := range symbols {
+		if sym.ID == testID {
+			continue
+		}
+		if sym.Kind != "function" && sym.Kind != "method" {
+			continue
+		}
+		if seen[sym.ID] {
+			continue
+		}
+		if !nameOccursAsIdent(sym.Name, sourceCode) && !nameOccursAsIdent(sym.QualifiedName, sourceCode) {
+			continue
+		}
+		seen[sym.ID] = true
+		item := sourceSnippet{
+			ID:            sym.ID,
+			Name:          sym.Name,
+			QualifiedName: sym.QualifiedName,
+			Kind:          sym.Kind,
+			File:          sym.File,
+			Line:          sym.Line,
+			Column:        sym.Column,
+			Package:       sym.Package,
+		}
+		if code, err := readSourceSnippet(projectPath, sym.File, sym.Line); err == nil {
+			item.SourceCode = code
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// nameOccursAsIdent returns true if name appears in code at an identifier boundary
+// (not preceded or followed by an identifier character). For dotted names like
+// "pkg.Foo", the dot is allowed inside the match but boundaries still apply at
+// the outer edges.
+func nameOccursAsIdent(name, code string) bool {
+	if name == "" {
+		return false
+	}
+	idx := 0
+	for {
+		rel := strings.Index(code[idx:], name)
+		if rel < 0 {
+			return false
+		}
+		i := idx + rel
+		end := i + len(name)
+		var before, after byte = ' ', ' '
+		if i > 0 {
+			before = code[i-1]
+		}
+		if end < len(code) {
+			after = code[end]
+		}
+		if !isIdentByte(before) && !isIdentByte(after) {
+			return true
+		}
+		idx = i + 1
+	}
+}
+
+func isIdentByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '_'
 }

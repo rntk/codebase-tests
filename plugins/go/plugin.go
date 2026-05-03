@@ -38,17 +38,9 @@ func (p *Plugin) Name() string {
 	return "go"
 }
 
-// Initialize checks dependencies and starts gopls.
 func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		return fmt.Errorf("go not found in PATH: %w", err)
-	}
-	lspCommand := strings.Fields(cfg.LSPServerAddress)
-	if len(lspCommand) == 0 {
-		lspCommand = []string{"gopls"}
-	}
-	if _, err := exec.LookPath(lspCommand[0]); err != nil {
-		return fmt.Errorf("%s not found in PATH: %w", lspCommand[0], err)
 	}
 
 	p.root = cfg.ProjectRoot
@@ -58,9 +50,20 @@ func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error 
 	}
 	p.env = cfg.Env
 
+	lspCommand := strings.Fields(cfg.LSPServerAddress)
+	if len(lspCommand) == 0 {
+		lspCommand = []string{"gopls"}
+	}
+	if _, err := exec.LookPath(lspCommand[0]); err != nil {
+		return nil
+	}
+
 	rootURI := pathToURI(cfg.ProjectRoot)
 	p.client = lsp.NewClient(lspCommand, rootURI, p.timeout)
-	return p.client.Start(ctx)
+	if err := p.client.Start(ctx); err != nil {
+		p.client = nil
+	}
+	return nil
 }
 
 // Shutdown stops the LSP client.
@@ -145,11 +148,23 @@ func (p *Plugin) DiscoverTests(file plugin.File) ([]plugin.TestFunc, error) {
 	return tests, nil
 }
 
-// DiscoverSymbols walks all .go files and queries LSP document symbols.
 func (p *Plugin) DiscoverSymbols(root string) ([]plugin.Symbol, error) {
-	if p.client == nil {
-		return nil, fmt.Errorf("plugin not initialized")
+	p.mu.Lock()
+	if p.root == "" {
+		p.root = root
 	}
+	p.mu.Unlock()
+
+	if p.client != nil {
+		syms, err := p.discoverSymbolsFromLSP(root)
+		if err == nil && len(syms) > 0 {
+			return syms, nil
+		}
+	}
+	return p.discoverSymbolsFromAST(root)
+}
+
+func (p *Plugin) discoverSymbolsFromLSP(root string) ([]plugin.Symbol, error) {
 	var symbols []plugin.Symbol
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -180,6 +195,67 @@ func (p *Plugin) DiscoverSymbols(root string) ([]plugin.Symbol, error) {
 		pkg := filepath.Base(filepath.Dir(path))
 		syms := documentSymbolsToPlugin(dsyms, path, pkg, p.root)
 		symbols = append(symbols, syms...)
+		return nil
+	})
+
+	p.mu.Lock()
+	p.symbolsByID = make(map[string]plugin.Symbol)
+	for _, s := range symbols {
+		p.symbolsByID[s.ID] = s
+	}
+	p.mu.Unlock()
+
+	return symbols, err
+}
+
+func (p *Plugin) discoverSymbolsFromAST(root string) ([]plugin.Symbol, error) {
+	var symbols []plugin.Symbol
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "vendor" || d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return nil
+		}
+
+		pkg := filepath.Base(filepath.Dir(path))
+		relFile := p.relativePath(path)
+
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			pos := fset.Position(fn.Pos())
+			kind := "function"
+			if fn.Recv != nil {
+				kind = "method"
+			}
+			qualifiedName := fmt.Sprintf("%s.%s", pkg, fn.Name.Name)
+			symbols = append(symbols, plugin.Symbol{
+				ID:            fmt.Sprintf("go:%s:%s:%d:%d", relFile, qualifiedName, pos.Line, pos.Column),
+				Name:          fn.Name.Name,
+				QualifiedName: qualifiedName,
+				Kind:          kind,
+				File:          relFile,
+				Line:          pos.Line,
+				Column:        pos.Column,
+				Package:       pkg,
+			})
+		}
+
 		return nil
 	})
 

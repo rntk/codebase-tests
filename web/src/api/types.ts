@@ -33,6 +33,7 @@ export interface Symbol {
   package: string;
   covered: boolean;
   coveredBy?: string[];
+  sourceCode?: string;
 }
 
 export interface TestFunc {

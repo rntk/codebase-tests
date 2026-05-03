@@ -27,9 +27,6 @@ func initPlugin(t *testing.T) *Plugin {
 		ToolTimeoutSeconds: 30,
 	}
 	if err := p.Initialize(ctx, cfg); err != nil {
-		if strings.Contains(err.Error(), "gopls not found") {
-			t.Skip("gopls not installed")
-		}
 		t.Fatalf("initialize: %v", err)
 	}
 	return p
@@ -135,6 +132,10 @@ func TestCallGraph(t *testing.T) {
 		defer cancel()
 		_ = p.Shutdown(ctx)
 	}()
+
+	if p.client == nil {
+		t.Skip("gopls not available")
+	}
 
 	root := sampleRoot(t)
 	syms, err := p.DiscoverSymbols(root)
