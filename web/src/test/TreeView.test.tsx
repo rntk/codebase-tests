@@ -37,4 +37,22 @@ describe('TreeView', () => {
     const item = screen.getByTestId('tree-item-child1')
     expect(item.style.background).toBe('rgb(227, 242, 253)')
   })
+
+  it('renders node markers', () => {
+    render(
+      <TreeView
+        nodes={[
+          {
+            id: 'test-with-golden',
+            label: 'TestWithGolden',
+            marker: { kind: 'success', label: 'Has golden test data' },
+          },
+        ]}
+      />
+    )
+
+    const marker = screen.getByTestId('tree-item-marker-test-with-golden')
+    expect(marker).toHaveTextContent('✓')
+    expect(marker).toHaveAccessibleName('Has golden test data')
+  })
 })

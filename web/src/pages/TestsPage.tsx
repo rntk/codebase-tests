@@ -19,6 +19,10 @@ function groupByFile(tests: TestFunc[]): Map<string, TestFunc[]> {
   return map
 }
 
+function hasGoldenTestData(test: TestFunc): boolean {
+  return test.hasGolden === true || (test.goldenCases?.length ?? 0) > 0
+}
+
 function toTreeNodes(tests: TestFunc[]): TreeNode[] {
   const byFile = groupByFile(tests)
   return Array.from(byFile.entries()).map(([file, funcs]) => ({
@@ -27,6 +31,13 @@ function toTreeNodes(tests: TestFunc[]): TreeNode[] {
     children: funcs.map((t) => ({
       id: t.id,
       label: <span>🧪 {t.name}</span>,
+      marker: hasGoldenTestData(t)
+        ? {
+            kind: 'success',
+            label: 'Has golden test data',
+            title: 'Golden test data found',
+          }
+        : undefined,
       children: t.subCases?.map((c: TestCase) => ({
         id: c.id,
         label: <span>📂 {c.name}</span>,

@@ -79,6 +79,7 @@ const tests: TestFunc[] = [
     line: 1,
     column: 1,
     package: 'calc',
+    hasGolden: true,
     subCases: [
       { id: 'go:calc/add_test.go:calc.TestAdd:positive', name: 'positive', casePath: 'testdata/calc/TestAdd/positive' },
       { id: 'go:calc/add_test.go:calc.TestAdd:negative', name: 'negative', casePath: 'testdata/calc/TestAdd/negative' },

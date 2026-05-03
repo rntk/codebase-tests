@@ -52,7 +52,37 @@ func (h *TestsHandler) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	respondJSON(w, all)
+	conv := defaultConvention(p)
+	resp := make([]testListItem, 0, len(all))
+	for _, t := range all {
+		item := testListItem{
+			ID:           t.ID,
+			Name:         t.Name,
+			File:         t.File,
+			Line:         t.Line,
+			Column:       t.Column,
+			Package:      t.Package,
+			SubCases:     t.SubCases,
+			CoveredFuncs: t.CoveredFuncs,
+		}
+		if cases, err := golden.ResolveCases(p.Path, t.ID, conv); err == nil && len(cases) > 0 {
+			item.HasGolden = true
+		}
+		resp = append(resp, item)
+	}
+	respondJSON(w, resp)
+}
+
+type testListItem struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	File         string            `json:"file"`
+	Line         int               `json:"line"`
+	Column       int               `json:"column"`
+	Package      string            `json:"package"`
+	HasGolden    bool              `json:"hasGolden,omitempty"`
+	SubCases     []plugin.TestCase `json:"subCases,omitempty"`
+	CoveredFuncs []string          `json:"coveredFuncs,omitempty"`
 }
 
 // Get returns a single test with detail.

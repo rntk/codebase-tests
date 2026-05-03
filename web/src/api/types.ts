@@ -43,6 +43,7 @@ export interface TestFunc {
   line: number;
   column: number;
   package: string;
+  hasGolden?: boolean;
   subCases?: TestCase[];
   coveredFuncs?: string[];
   sourceCode?: string;
