@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"io/fs"
 	"log"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/rntk/codebase-tests/internal/lsp"
 	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/pluginutil"
 )
 
 // Plugin implements plugin.Plugin for Go.
@@ -37,6 +39,14 @@ type Plugin struct {
 // Name returns the plugin name.
 func (p *Plugin) Name() string {
 	return "go"
+}
+
+// CheckDependencies verifies that required external tools are available.
+func (p *Plugin) CheckDependencies() error {
+	if _, err := exec.LookPath("go"); err != nil {
+		return fmt.Errorf("go not found in PATH: %w", err)
+	}
+	return nil
 }
 
 func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error {
@@ -400,7 +410,7 @@ func (p *Plugin) RunTests(ctx context.Context, sel plugin.TestSelection, opts pl
 
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = wd
-	cmd.Env = buildEnv(opts.EnvAllowlist, p.env)
+	cmd.Env = pluginutil.BuildEnv(opts.EnvAllowlist, p.env)
 
 	maxOut := opts.MaxOutputBytes
 	if maxOut == 0 {
@@ -468,7 +478,7 @@ func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts pl
 
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = wd
-	cmd.Env = buildEnv(opts.EnvAllowlist, p.env)
+	cmd.Env = pluginutil.BuildEnv(opts.EnvAllowlist, p.env)
 
 	_ = cmd.Run() // coverage file may exist even if tests fail
 
@@ -514,6 +524,42 @@ func (p *Plugin) Mutators() []plugin.Mutator {
 // Generators returns an empty list (v1 deferred).
 func (p *Plugin) Generators() []plugin.Generator {
 	return nil
+}
+
+// ExtractReferences extracts identifier and qualified names from Go source code,
+// skipping string literals and comments.
+func (p *Plugin) ExtractReferences(sourceCode string) (idents map[string]bool, qualified map[string]bool) {
+	idents = make(map[string]bool)
+	qualified = make(map[string]bool)
+
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(sourceCode))
+	var s scanner.Scanner
+	s.Init(file, []byte(sourceCode), nil, 0)
+
+	var prevIdent string
+	var prevWasDot bool
+	for {
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		switch tok {
+		case token.IDENT:
+			idents[lit] = true
+			if prevWasDot && prevIdent != "" {
+				qualified[prevIdent+"."+lit] = true
+			}
+			prevIdent = lit
+			prevWasDot = false
+		case token.PERIOD:
+			prevWasDot = true
+		default:
+			prevIdent = ""
+			prevWasDot = false
+		}
+	}
+	return idents, qualified
 }
 
 // Helpers.
@@ -635,53 +681,11 @@ func dedupeTestCases(cases []plugin.TestCase) []plugin.TestCase {
 	return cases
 }
 
-func pathToURI(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
-	return "file://" + abs
-}
-
-func uriToPath(uri string) string {
-	if strings.HasPrefix(uri, "file://") {
-		return uri[len("file://"):]
-	}
-	return uri
-}
+func pathToURI(path string) string { return pluginutil.PathToURI(path) }
+func uriToPath(uri string) string   { return pluginutil.URIToPath(uri) }
 
 func (p *Plugin) relativePath(path string) string {
-	root := p.root
-	if root == "" {
-		return filepath.ToSlash(filepath.Clean(path))
-	}
-	rel, err := filepath.Rel(root, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(filepath.Clean(path))
-	}
-	return filepath.ToSlash(rel)
-}
-
-func buildEnv(allowlist []string, extra map[string]string) []string {
-	env := os.Environ()
-	if len(allowlist) > 0 {
-		allowed := make(map[string]bool)
-		for _, k := range allowlist {
-			allowed[k] = true
-		}
-		filtered := make([]string, 0, len(env))
-		for _, e := range env {
-			key := strings.SplitN(e, "=", 2)[0]
-			if allowed[key] {
-				filtered = append(filtered, e)
-			}
-		}
-		env = filtered
-	}
-	for k, v := range extra {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env
+	return pluginutil.RelativePath(p.root, path)
 }
 
 type testEvent struct {
@@ -839,27 +843,11 @@ func parseCoverProfile(path string) (plugin.CoverageReport, error) {
 }
 
 func findFileCoverage(files []plugin.FileCoverage, path string) (plugin.FileCoverage, bool) {
-	for _, fc := range files {
-		if filepath.Clean(fc.Path) == filepath.Clean(path) {
-			return fc, true
-		}
-		if strings.HasSuffix(filepath.Clean(path), filepath.Clean(fc.Path)) {
-			return fc, true
-		}
-		if strings.HasSuffix(filepath.Clean(fc.Path), filepath.Clean(path)) {
-			return fc, true
-		}
-	}
-	return plugin.FileCoverage{}, false
+	return pluginutil.FindFileCoverage(files, path)
 }
 
 func isLineCovered(line int, ranges []plugin.LineRange) bool {
-	for _, r := range ranges {
-		if line >= r.Start && line <= r.End && r.Hit {
-			return true
-		}
-	}
-	return false
+	return pluginutil.IsLineCovered(line, ranges)
 }
 
 func documentSymbolsToPlugin(syms []lsp.DocumentSymbol, file, pkg, root string) []plugin.Symbol {

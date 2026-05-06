@@ -1,10 +1,9 @@
 package api
 
 import (
-	"go/scanner"
-	"go/token"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"github.com/rntk/codebase-tests/internal/golden"
@@ -128,16 +127,25 @@ func (h *TestsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	registry := h.discovery.Registry()
 	var symbols []plugin.Symbol
+	var extractor plugin.ReferenceExtractor
 	if registry != nil {
 		if syms, err := tests.DiscoverSymbols(registry, p.Path); err == nil {
 			symbols = symbolsForLanguage(syms, languageFromID(t.ID))
+		}
+		if plug, err := registry.For(languageFromID(t.ID)); err == nil {
+			if ex, ok := plug.(plugin.ReferenceExtractor); ok {
+				extractor = ex
+			}
 		}
 	}
 	reader := newSnippetCache(p.Path)
 	if covered := coveredFunctionSources(reader, symbols, t.CoveredFuncs); len(covered) > 0 {
 		resp.CoveredFuncSources = covered
 	} else {
-		resp.CoveredFuncSources = referencedSymbolSources(reader, symbols, resp.SourceCode, t.ID, t.File)
+		if extractor == nil {
+			extractor = defaultReferenceExtractor{}
+		}
+		resp.CoveredFuncSources = referencedSymbolSources(reader, symbols, resp.SourceCode, t.ID, t.File, extractor)
 	}
 	for _, c := range t.SubCases {
 		resp.SubCases = append(resp.SubCases, goldenTestCaseRef{
@@ -189,15 +197,14 @@ func coveredFunctionSources(reader *snippetCache, symbols []plugin.Symbol, cover
 }
 
 // referencedSymbolSources scans the given test source code for any project
-// symbols (functions or methods) whose name is used as an identifier. Strings
-// and comments are skipped via go/scanner tokenization, so false positives
-// from string literals or comments are avoided. Used as a fallback when the
-// language plugin doesn't populate t.CoveredFuncs.
-func referencedSymbolSources(reader *snippetCache, symbols []plugin.Symbol, sourceCode, testID, testFile string) []sourceSnippet {
-	if sourceCode == "" || len(symbols) == 0 {
+// symbols (functions or methods) whose name is used as an identifier.
+// The extractor is provided by the language plugin so the analysis is
+// language-aware (e.g. Go's go/scanner skips strings/comments).
+func referencedSymbolSources(reader *snippetCache, symbols []plugin.Symbol, sourceCode, testID, testFile string, extractor plugin.ReferenceExtractor) []sourceSnippet {
+	if sourceCode == "" || len(symbols) == 0 || extractor == nil {
 		return nil
 	}
-	idents, qualified := goReferencedNames(sourceCode)
+	idents, qualified := extractor.ExtractReferences(sourceCode)
 	if len(idents) == 0 && len(qualified) == 0 {
 		return nil
 	}
@@ -228,45 +235,6 @@ func referencedSymbolSources(reader *snippetCache, symbols []plugin.Symbol, sour
 		out = append(out, snippetFromSymbol(reader, sym))
 	}
 	return out
-}
-
-// goReferencedNames tokenizes Go source and returns (a) the set of all
-// identifier tokens that appear, and (b) the set of "x.y" qualified names
-// formed by IDENT '.' IDENT sequences. String and comment contents are
-// ignored automatically because go/scanner emits them as STRING/COMMENT
-// tokens, not IDENT.
-func goReferencedNames(src string) (idents, qualified map[string]bool) {
-	idents = make(map[string]bool)
-	qualified = make(map[string]bool)
-
-	fset := token.NewFileSet()
-	file := fset.AddFile("", fset.Base(), len(src))
-	var s scanner.Scanner
-	s.Init(file, []byte(src), nil, 0)
-
-	var prevIdent string
-	var prevWasDot bool
-	for {
-		_, tok, lit := s.Scan()
-		if tok == token.EOF {
-			break
-		}
-		switch tok {
-		case token.IDENT:
-			idents[lit] = true
-			if prevWasDot && prevIdent != "" {
-				qualified[prevIdent+"."+lit] = true
-			}
-			prevIdent = lit
-			prevWasDot = false
-		case token.PERIOD:
-			prevWasDot = true
-		default:
-			prevIdent = ""
-			prevWasDot = false
-		}
-	}
-	return idents, qualified
 }
 
 func snippetFromSymbol(reader *snippetCache, sym plugin.Symbol) sourceSnippet {
@@ -329,4 +297,25 @@ func (c *snippetCache) Read(file string, line int) (string, error) {
 	}
 	c.snippets[key] = code
 	return code, nil
+}
+
+// defaultReferenceExtractor is a language-agnostic fallback that extracts
+// identifiers and simple qualified names (pkg.Func) via regex. It restores
+// reference-snippet behavior for plugins that do not implement
+// plugin.ReferenceExtractor.
+type defaultReferenceExtractor struct{}
+
+var identRE = regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]*\b`)
+var qualifiedRE = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
+
+func (defaultReferenceExtractor) ExtractReferences(sourceCode string) (idents map[string]bool, qualified map[string]bool) {
+	idents = make(map[string]bool)
+	qualified = make(map[string]bool)
+	for _, m := range identRE.FindAllString(sourceCode, -1) {
+		idents[m] = true
+	}
+	for _, m := range qualifiedRE.FindAllStringSubmatch(sourceCode, -1) {
+		qualified[m[1]+"."+m[2]] = true
+	}
+	return idents, qualified
 }

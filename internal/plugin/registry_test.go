@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,7 @@ type fakePlugin struct {
 	initialized bool
 	shutdown    bool
 	cfg         PluginConfig
+	depsErr     error
 }
 
 func (f *fakePlugin) Name() string { return f.name }
@@ -40,6 +42,7 @@ func (f *fakePlugin) Coverage(ctx context.Context, sel TestSelection, opts RunOp
 func (f *fakePlugin) GoldenLayout() GoldenConvention { return GoldenConvention{} }
 func (f *fakePlugin) Mutators() []Mutator            { return nil }
 func (f *fakePlugin) Generators() []Generator        { return nil }
+func (f *fakePlugin) CheckDependencies() error       { return f.depsErr }
 
 func TestRegistryRegisterAndFor(t *testing.T) {
 	r := NewRegistry()
@@ -160,12 +163,58 @@ func TestRegistryShutdownError(t *testing.T) {
 
 func TestReadyCheck(t *testing.T) {
 	r := NewRegistry()
+	// No plugins registered -> no dependencies to check.
+	if err := r.ReadyCheck(); err != nil {
+		t.Fatalf("expected no error with empty registry, got %v", err)
+	}
+
+	// Register a plugin without dependency checker -> still no error.
+	r.Register(&fakePlugin{name: "noop"})
+	if err := r.ReadyCheck(); err != nil {
+		t.Fatalf("expected no error without DependencyChecker, got %v", err)
+	}
+
+	// Register a plugin that reports missing dependencies.
+	r.Register(&fakePlugin{name: "bad", depsErr: fmt.Errorf("missing binary: xyz")})
 	err := r.ReadyCheck()
-	// We cannot assume all binaries exist in the test environment.
-	// Verify that when it fails, the error mentions the missing binaries.
-	if err != nil {
-		if !strings.Contains(err.Error(), "missing required binaries") {
-			t.Errorf("unexpected error format: %v", err)
-		}
+	if err == nil {
+		t.Fatal("expected error for plugin with missing dependencies")
+	}
+	if !strings.Contains(err.Error(), "bad") || !strings.Contains(err.Error(), "xyz") {
+		t.Errorf("unexpected error format: %v", err)
+	}
+}
+
+func TestFactoryRegistry(t *testing.T) {
+	// Clear any previously registered factories for a clean test.
+	factoriesMu.Lock()
+	old := factories
+	factories = make(map[string]Factory)
+	factoriesMu.Unlock()
+	defer func() {
+		factoriesMu.Lock()
+		factories = old
+		factoriesMu.Unlock()
+	}()
+
+	RegisterFactory("fake", func() Plugin { return &fakePlugin{name: "fake"} })
+
+	f, ok := GetFactory("fake")
+	if !ok {
+		t.Fatal("expected factory to be registered")
+	}
+	p := f()
+	if p.Name() != "fake" {
+		t.Errorf("name = %q, want fake", p.Name())
+	}
+
+	names := ListFactories()
+	if len(names) != 1 || names[0] != "fake" {
+		t.Errorf("factories = %v, want [fake]", names)
+	}
+
+	_, ok = GetFactory("missing")
+	if ok {
+		t.Error("expected missing factory to not exist")
 	}
 }

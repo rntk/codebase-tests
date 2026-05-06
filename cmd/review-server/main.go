@@ -16,10 +16,12 @@ import (
 	"github.com/rntk/codebase-tests/internal/plugin"
 	"github.com/rntk/codebase-tests/internal/project"
 	"github.com/rntk/codebase-tests/internal/tests"
-	goplugin "github.com/rntk/codebase-tests/plugins/go"
-	javascriptplugin "github.com/rntk/codebase-tests/plugins/javascript"
-	pythonplugin "github.com/rntk/codebase-tests/plugins/python"
-	typescriptplugin "github.com/rntk/codebase-tests/plugins/typescript"
+
+	// Built-in plugins self-register via init().
+	_ "github.com/rntk/codebase-tests/plugins/go"
+	_ "github.com/rntk/codebase-tests/plugins/javascript"
+	_ "github.com/rntk/codebase-tests/plugins/python"
+	_ "github.com/rntk/codebase-tests/plugins/typescript"
 )
 
 func main() {
@@ -55,21 +57,16 @@ func main() {
 		}
 	}
 
-	// Create plugin registry and register built-in plugins.
+	// Create plugin registry and load plugins via the factory registry.
+	// Built-in plugins self-register when their packages are imported above.
 	registry := plugin.NewRegistry()
 	for _, cfg := range p.Plugins {
-		switch cfg.Name {
-		case "go":
-			registry.Register(goplugin.New())
-		case "javascript":
-			registry.Register(javascriptplugin.New())
-		case "typescript":
-			registry.Register(typescriptplugin.New())
-		case "python":
-			registry.Register(pythonplugin.New())
-		default:
-			log.Printf("warning: plugin %q is configured but not available", cfg.Name)
+		factory, ok := plugin.GetFactory(cfg.Name)
+		if !ok {
+			log.Printf("warning: plugin %q is configured but not available (registered: %v)", cfg.Name, plugin.ListFactories())
+			continue
 		}
+		registry.Register(factory())
 	}
 
 	ctx := context.Background()

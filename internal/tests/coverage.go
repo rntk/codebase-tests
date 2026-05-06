@@ -88,8 +88,8 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 		}
 	}
 
-	// Run-level coverage
-	var report plugin.CoverageReport
+	// Run-level coverage: aggregate reports from all plugins.
+	var reports []plugin.CoverageReport
 	for _, p := range c.registry.All() {
 		coverager, ok := p.(plugin.Coverager)
 		if !ok {
@@ -97,10 +97,10 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 		}
 		r, err := coverager.Coverage(ctx, plugin.TestSelection{}, opts)
 		if err == nil {
-			report = r
-			break
+			reports = append(reports, r)
 		}
 	}
+	report := mergeCoverageReports(reports)
 
 	uncoveredSet := make(map[string]bool)
 	reportUncovered := make(map[string]bool)
@@ -183,4 +183,69 @@ func sameCoveragePath(a, b string) bool {
 	a = filepath.ToSlash(filepath.Clean(a))
 	b = filepath.ToSlash(filepath.Clean(b))
 	return a == b || strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
+}
+
+func mergeCoverageReports(reports []plugin.CoverageReport) plugin.CoverageReport {
+	if len(reports) == 0 {
+		return plugin.CoverageReport{Scope: "run"}
+	}
+	if len(reports) == 1 {
+		return reports[0]
+	}
+
+	fileMap := make(map[string]plugin.FileCoverage)
+	for _, r := range reports {
+		for _, fc := range r.Files {
+			key := filepath.ToSlash(filepath.Clean(fc.Path))
+			if existing, ok := fileMap[key]; ok {
+				// Merge line ranges. For simplicity we append and let downstream
+				// consumers handle overlapping ranges; the isLineCovered helper
+				// checks any matching range.
+				existing.Lines = append(existing.Lines, fc.Lines...)
+				fileMap[key] = existing
+			} else {
+				fileMap[key] = fc
+			}
+		}
+	}
+
+	var files []plugin.FileCoverage
+	var totalLines, hitLines int
+	for path := range fileMap {
+		fc := fileMap[path]
+		fileHit := 0
+		fileTotal := 0
+		seen := make(map[plugin.LineRange]bool)
+		for _, lr := range fc.Lines {
+			if seen[lr] {
+				continue
+			}
+			seen[lr] = true
+			lines := lr.End - lr.Start + 1
+			if lines < 0 {
+				lines = 0
+			}
+			fileTotal += lines
+			if lr.Hit {
+				fileHit += lines
+				hitLines += lines
+			}
+			totalLines += lines
+		}
+		if fileTotal > 0 {
+			fc.Percentage = float64(fileHit) / float64(fileTotal) * 100
+		}
+		files = append(files, fc)
+	}
+
+	var percentage float64
+	if totalLines > 0 {
+		percentage = float64(hitLines) / float64(totalLines) * 100
+	}
+
+	return plugin.CoverageReport{
+		Scope:      "run",
+		Percentage: percentage,
+		Files:      files,
+	}
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/rntk/codebase-tests/internal/lsp"
 	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/pluginutil"
 )
 
 // Plugin implements plugin.Plugin for JavaScript, TypeScript, and web tests.
@@ -43,13 +44,21 @@ func (p *Plugin) Name() string {
 	return "javascript"
 }
 
-// Initialize checks Node/npm and starts the configured TypeScript LSP server when available.
-func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error {
+// CheckDependencies verifies that Node and npm are installed.
+func (p *Plugin) CheckDependencies() error {
 	if _, err := exec.LookPath("node"); err != nil {
 		return fmt.Errorf("node not found in PATH: %w", err)
 	}
 	if _, err := exec.LookPath("npm"); err != nil {
 		return fmt.Errorf("npm not found in PATH: %w", err)
+	}
+	return nil
+}
+
+// Initialize checks Node/npm and starts the configured TypeScript LSP server when available.
+func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error {
+	if err := p.CheckDependencies(); err != nil {
+		return err
 	}
 
 	p.root = cfg.ProjectRoot
@@ -172,7 +181,7 @@ func (p *Plugin) RunTests(ctx context.Context, sel plugin.TestSelection, opts pl
 	}
 
 	start := time.Now()
-	out, err := p.runCommand(ctx, wd, opts, "npm", args...)
+	out, err := pluginutil.RunCommand(ctx, wd, opts, p.env, "npm", args...)
 	result := parseTestOutput(out)
 	result.Duration = time.Since(start).Seconds()
 	result.Output = out
@@ -193,7 +202,7 @@ func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts pl
 	if len(sel.TestIDs) > 0 {
 		args = append(args, "-t", testNamePattern(sel.TestIDs))
 	}
-	_, _ = p.runCommand(ctx, wd, opts, "npm", args...)
+	_, _ = pluginutil.RunCommand(ctx, wd, opts, p.env, "npm", args...)
 
 	report, err := parseCoverageFinal(filepath.Join(wd, "coverage", "coverage-final.json"), wd)
 	if err != nil {
@@ -206,8 +215,8 @@ func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts pl
 		if sym.Kind != "function" && sym.Kind != "method" {
 			continue
 		}
-		fc, ok := findFileCoverage(report.Files, sym.File)
-		if !ok || !isLineCovered(sym.Line, fc.Lines) {
+		fc, ok := pluginutil.FindFileCoverage(report.Files, sym.File)
+		if !ok || !pluginutil.IsLineCovered(sym.Line, fc.Lines) {
 			report.Uncovered = append(report.Uncovered, sym.ID)
 		}
 	}
@@ -342,15 +351,7 @@ func (p *Plugin) packageForFile(path string) string {
 }
 
 func (p *Plugin) relativePath(path string) string {
-	root := p.root
-	if root == "" {
-		return filepath.ToSlash(filepath.Clean(path))
-	}
-	rel, err := filepath.Rel(root, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(filepath.Clean(path))
-	}
-	return filepath.ToSlash(rel)
+	return pluginutil.RelativePath(p.root, path)
 }
 
 func (p *Plugin) workingDir(opts plugin.RunOptions) string {
@@ -363,25 +364,7 @@ func (p *Plugin) workingDir(opts plugin.RunOptions) string {
 	return "."
 }
 
-func (p *Plugin) runCommand(ctx context.Context, wd string, opts plugin.RunOptions, name string, args ...string) (string, error) {
-	if opts.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.Timeout)*time.Second)
-		defer cancel()
-	}
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = wd
-	cmd.Env = buildEnv(opts.EnvAllowlist, p.env)
-	out, err := cmd.CombinedOutput()
-	maxOut := opts.MaxOutputBytes
-	if maxOut == 0 {
-		maxOut = 1 << 20
-	}
-	if int64(len(out)) > maxOut {
-		out = append(out[:int(maxOut)], []byte("\n...truncated...")...)
-	}
-	return string(out), err
-}
+
 
 func (p *Plugin) fillTestIDs(result *plugin.RunResult) {
 	p.mu.RLock()
@@ -617,27 +600,7 @@ func parseTestOutput(out string) plugin.RunResult {
 	return result
 }
 
-func buildEnv(allowlist []string, extra map[string]string) []string {
-	env := os.Environ()
-	if len(allowlist) > 0 {
-		allowed := make(map[string]bool)
-		for _, k := range allowlist {
-			allowed[k] = true
-		}
-		filtered := make([]string, 0, len(env))
-		for _, e := range env {
-			key := strings.SplitN(e, "=", 2)[0]
-			if allowed[key] {
-				filtered = append(filtered, e)
-			}
-		}
-		env = filtered
-	}
-	for k, v := range extra {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env
-}
+
 
 func shouldSkipDir(name string) bool {
 	switch name {
@@ -727,40 +690,7 @@ func relOrAbs(wd, path string) string {
 }
 
 func relPath(root, path string) string {
-	if rel, err := filepath.Rel(root, path); err == nil && !strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(rel)
-	}
-	return filepath.ToSlash(filepath.Clean(path))
+	return pluginutil.RelativePath(root, path)
 }
 
-func findFileCoverage(files []plugin.FileCoverage, path string) (plugin.FileCoverage, bool) {
-	for _, fc := range files {
-		if sameCoveragePath(fc.Path, path) {
-			return fc, true
-		}
-	}
-	return plugin.FileCoverage{}, false
-}
-
-func isLineCovered(line int, ranges []plugin.LineRange) bool {
-	for _, r := range ranges {
-		if line >= r.Start && line <= r.End {
-			return r.Hit
-		}
-	}
-	return false
-}
-
-func sameCoveragePath(a, b string) bool {
-	a = filepath.ToSlash(filepath.Clean(a))
-	b = filepath.ToSlash(filepath.Clean(b))
-	return a == b || strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
-}
-
-func pathToURI(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
-	return "file://" + filepath.ToSlash(abs)
-}
+func pathToURI(path string) string { return pluginutil.PathToURI(path) }

@@ -238,3 +238,17 @@ type Mutant struct {
 type PromptHinter interface {
 	TestPromptHints() string
 }
+
+// DependencyChecker verifies that required external tools are available.
+// Plugins implement this to declare their runtime dependencies instead of
+// relying on a global hard-coded list.
+type DependencyChecker interface {
+	CheckDependencies() error
+}
+
+// ReferenceExtractor extracts symbol references from source code.
+// Plugins implement this to provide language-aware reference extraction
+// for the API layer.
+type ReferenceExtractor interface {
+	ExtractReferences(sourceCode string) (idents map[string]bool, qualified map[string]bool)
+}

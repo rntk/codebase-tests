@@ -3,10 +3,46 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
+	"sort"
 	"sync"
 )
+
+// Factory creates a new Plugin instance.
+type Factory func() Plugin
+
+var (
+	factoriesMu sync.RWMutex
+	factories   = make(map[string]Factory)
+)
+
+// RegisterFactory registers a plugin factory by name. Built-in plugins call
+// this in their package init() so the server can load them by configuration
+// without hard-coding a switch statement.
+func RegisterFactory(name string, f Factory) {
+	factoriesMu.Lock()
+	defer factoriesMu.Unlock()
+	factories[name] = f
+}
+
+// GetFactory retrieves a registered plugin factory.
+func GetFactory(name string) (Factory, bool) {
+	factoriesMu.RLock()
+	defer factoriesMu.RUnlock()
+	f, ok := factories[name]
+	return f, ok
+}
+
+// ListFactories returns all registered factory names.
+func ListFactories() []string {
+	factoriesMu.RLock()
+	defer factoriesMu.RUnlock()
+	out := make([]string, 0, len(factories))
+	for name := range factories {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // Registry holds loaded plugins for a project.
 type Registry struct {
@@ -122,17 +158,21 @@ func (r *Registry) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// ReadyCheck verifies that required external binaries are available in PATH.
+// ReadyCheck verifies that each registered plugin's dependencies are available.
+// Plugins optionally implement DependencyChecker to declare their own requirements.
 func (r *Registry) ReadyCheck() error {
-	required := []string{"go", "gopls", "git", "pytest", "coverage", "node", "npm", "typescript-language-server"}
-	var missing []string
-	for _, bin := range required {
-		if _, err := exec.LookPath(bin); err != nil {
-			missing = append(missing, bin)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var errs []error
+	for name, p := range r.plugins {
+		if dc, ok := p.(DependencyChecker); ok {
+			if err := dc.CheckDependencies(); err != nil {
+				errs = append(errs, fmt.Errorf("plugin %q: %w", name, err))
+			}
 		}
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("missing required binaries: %s", strings.Join(missing, ", "))
+	if len(errs) > 0 {
+		return errs[0]
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rntk/codebase-tests/internal/plugin"
+	"github.com/rntk/codebase-tests/internal/pluginutil"
 )
 
 // gremlinsCatalog is the static descriptor exposed via Plugin.Mutators().
@@ -74,7 +75,7 @@ func (p *Plugin) RunMutations(ctx context.Context, scope plugin.MutationScope, o
 
 	cmd := exec.CommandContext(ctx, "gremlins", args...)
 	cmd.Dir = wd
-	cmd.Env = buildEnv(opts.EnvAllowlist, p.env)
+	cmd.Env = pluginutil.BuildEnv(opts.EnvAllowlist, p.env)
 
 	start := time.Now()
 	out, runErr := cmd.CombinedOutput()
