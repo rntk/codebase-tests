@@ -46,12 +46,16 @@ func (d *Discovery) DiscoverAll(projectPath string) ([]plugin.TestFunc, error) {
 
 	all := []plugin.TestFunc{}
 	for _, p := range d.registry.All() {
-		files, err := p.DiscoverTestFiles(projectPath)
+		discoverer, ok := p.(plugin.TestDiscoverer)
+		if !ok {
+			continue
+		}
+		files, err := discoverer.DiscoverTestFiles(projectPath)
 		if err != nil {
 			continue
 		}
 		for _, f := range files {
-			tests, err := p.DiscoverTests(f)
+			tests, err := discoverer.DiscoverTests(f)
 			if err != nil {
 				continue
 			}
@@ -84,7 +88,11 @@ func (d *Discovery) FindByID(projectPath, testID string) (plugin.TestFunc, bool)
 func DiscoverSymbols(registry *plugin.Registry, projectPath string) ([]plugin.Symbol, error) {
 	all := []plugin.Symbol{}
 	for _, p := range registry.All() {
-		syms, err := p.DiscoverSymbols(projectPath)
+		discoverer, ok := p.(plugin.SymbolDiscoverer)
+		if !ok {
+			continue
+		}
+		syms, err := discoverer.DiscoverSymbols(projectPath)
 		if err != nil {
 			continue
 		}

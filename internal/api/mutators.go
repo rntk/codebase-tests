@@ -55,7 +55,11 @@ func (h *MutatorsHandler) List(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		for _, m := range pl.Mutators() {
+		provider, ok := pl.(plugin.MutatorProvider)
+		if !ok {
+			continue
+		}
+		for _, m := range provider.Mutators() {
 			items = append(items, mutatorListItem{Mutator: m, Language: cfg.Name})
 		}
 	}

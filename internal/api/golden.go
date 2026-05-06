@@ -184,7 +184,17 @@ func (h *GoldenHandler) MutateCase(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		res, err := pl.RunTests(ctx, plugin.TestSelection{
+		runner, ok := pl.(plugin.TestRunner)
+		if !ok {
+			results = append(results, golden.MutationResult{
+				Mutation: m.Description,
+				Survived: false,
+				Output:   "plugin does not support running tests",
+			})
+			continue
+		}
+
+		res, err := runner.RunTests(ctx, plugin.TestSelection{
 			TestIDs: []string{testId},
 		}, defaultRunOptions(p))
 

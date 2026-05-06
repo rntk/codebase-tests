@@ -612,9 +612,9 @@ func parsePythonTests(path, pkg string, data []byte) []plugin.TestFunc {
 			pending = nil
 			continue
 		}
-		id := fmt.Sprintf("python:%s:%s", path, display)
+		id := plugin.NewTestID("python", path, display)
 		for j := range pending {
-			pending[j].ID = id + ":" + pending[j].CasePath
+			pending[j].ID = plugin.NewTestCaseID("python", path, display, plugin.UnescapeSegment(pending[j].CasePath))
 		}
 		tests = append(tests, plugin.TestFunc{
 			ID:       id,
@@ -646,11 +646,12 @@ func parsePythonSymbols(path, pkg string, data []byte) []plugin.Symbol {
 		}
 		if m := classRE.FindStringSubmatch(line); m != nil {
 			name := m[1]
-			id := fmt.Sprintf("python:%s:%s:%d:%d", path, name, i+1, indent+1)
+			qualified := qualify(pkg, name)
+			id := plugin.NewSymbolID("python", path, qualified, i+1, indent+1)
 			symbols = append(symbols, plugin.Symbol{
 				ID:            id,
 				Name:          name,
-				QualifiedName: qualify(pkg, name),
+				QualifiedName: qualified,
 				Kind:          "class",
 				File:          path,
 				Line:          i + 1,
@@ -674,7 +675,7 @@ func parsePythonSymbols(path, pkg string, data []byte) []plugin.Symbol {
 			continue
 		}
 		symbols = append(symbols, plugin.Symbol{
-			ID:            fmt.Sprintf("python:%s:%s:%d:%d", path, name, i+1, indent+1),
+			ID:            plugin.NewSymbolID("python", path, qualified, i+1, indent+1),
 			Name:          name,
 			QualifiedName: qualified,
 			Kind:          kind,
@@ -728,7 +729,7 @@ func parseParametrizeCases(line string) []plugin.TestCase {
 		if name == "" {
 			name = strconv.Itoa(i)
 		}
-		escaped := escapeCasePath(name)
+		escaped := plugin.EscapeSegment(name)
 		cases = append(cases, plugin.TestCase{Name: name, CasePath: escaped})
 	}
 	return cases
@@ -744,26 +745,20 @@ func quotedStrings(s string) []string {
 	return out
 }
 
-func escapeCasePath(name string) string {
-	name = strings.ReplaceAll(name, "%", "%25")
-	name = strings.ReplaceAll(name, ":", "%3A")
-	name = strings.ReplaceAll(name, "/", "%2F")
-	return name
-}
-
 func testSelectionExpr(ids []string) string {
 	var names []string
 	seen := make(map[string]bool)
 	for _, id := range ids {
-		parts := strings.Split(id, ":")
-		if len(parts) < 3 {
+		parsed, err := plugin.ParseID(id)
+		if err != nil {
 			continue
 		}
-		name := parts[2]
+		name := parsed.QualifiedName
 		if strings.Contains(name, ".") {
 			nameParts := strings.Split(name, ".")
 			name = nameParts[len(nameParts)-1]
 		}
+		name = plugin.UnescapeSegment(name)
 		if name != "" && !seen[name] {
 			names = append(names, name)
 			seen[name] = true

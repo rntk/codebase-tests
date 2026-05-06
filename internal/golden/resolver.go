@@ -2,8 +2,6 @@ package golden
 
 import (
 	"encoding/json"
-	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,7 +150,7 @@ func buildCase(funcDir string, caseFileName string, caseName string, testId stri
 	}
 
 	return GoldenCase{
-		ID:        testId + ":" + EscapeSegment(caseName),
+		ID:        plugin.AppendTestCaseID(testId, caseName),
 		Name:      caseName,
 		InPath:    inPath,
 		OutPath:   outPath,
@@ -167,55 +165,15 @@ func buildCase(funcDir string, caseFileName string, caseName string, testId stri
 // TestFunc ID: plugin:path:qualifiedName
 // TestCase ID: plugin:path:qualifiedName:casePath
 func ParseTestID(testId string) (pluginName string, path string, qualifiedName string, casePath string, err error) {
-	parts := splitEscaped(testId, ':')
-	switch len(parts) {
-	case 3:
-		return parts[0], parts[1], parts[2], "", nil
-	case 4:
-		return parts[0], parts[1], parts[2], parts[3], nil
-	default:
-		return "", "", "", "", fmt.Errorf("invalid test ID format: %q", testId)
-	}
-}
-
-func splitEscaped(s string, delim byte) []string {
-	var parts []string
-	var current strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == '%' && i+3 <= len(s) {
-			esc := strings.ToLower(s[i : i+3])
-			if (delim == ':' && esc == "%3a") || (delim == '/' && esc == "%2f") {
-				current.WriteString(s[i : i+3])
-				i += 3
-				continue
-			}
-		}
-		if s[i] == delim {
-			parts = append(parts, current.String())
-			current.Reset()
-			i++
-		} else {
-			current.WriteByte(s[i])
-			i++
-		}
-	}
-	parts = append(parts, current.String())
-	return parts
+	return plugin.ParseTestID(testId)
 }
 
 // EscapeSegment applies ID escaping rules to a path segment.
 func EscapeSegment(s string) string {
-	s = strings.ReplaceAll(s, "%", "%25")
-	s = strings.ReplaceAll(s, ":", "%3A")
-	s = strings.ReplaceAll(s, "/", "%2F")
-	return s
+	return plugin.EscapeSegment(s)
 }
 
 // UnescapeSegment reverses ID escaping rules.
 func UnescapeSegment(s string) string {
-	out, err := url.PathUnescape(s)
-	if err != nil {
-		return s
-	}
-	return out
+	return plugin.UnescapeSegment(s)
 }

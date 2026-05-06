@@ -2,23 +2,52 @@ package plugin
 
 import "context"
 
-// Plugin is the language-agnostic interface every language plugin must implement.
+// Plugin is the minimal lifecycle interface every language plugin must implement.
 type Plugin interface {
 	Name() string
 	Initialize(ctx context.Context, cfg PluginConfig) error
 	Shutdown(ctx context.Context) error
+}
 
+// TestDiscoverer discovers test files and tests.
+type TestDiscoverer interface {
 	DiscoverTestFiles(root string) ([]File, error)
 	DiscoverTests(file File) ([]TestFunc, error)
+}
+
+// SymbolDiscoverer discovers and resolves source symbols.
+type SymbolDiscoverer interface {
 	DiscoverSymbols(root string) ([]Symbol, error)
 	ResolveSymbol(pos Position) (Symbol, error)
+}
+
+// CallGrapher returns call graph fragments for symbols.
+type CallGrapher interface {
 	CallGraph(sym Symbol) (Graph, error)
+}
 
+// TestRunner runs selected tests.
+type TestRunner interface {
 	RunTests(ctx context.Context, sel TestSelection, opts RunOptions) (RunResult, error)
-	Coverage(ctx context.Context, sel TestSelection, opts RunOptions) (CoverageReport, error)
+}
 
+// Coverager returns coverage for selected tests.
+type Coverager interface {
+	Coverage(ctx context.Context, sel TestSelection, opts RunOptions) (CoverageReport, error)
+}
+
+// GoldenLayouter reports golden file layout conventions.
+type GoldenLayouter interface {
 	GoldenLayout() GoldenConvention
+}
+
+// MutatorProvider reports available golden mutation operators.
+type MutatorProvider interface {
 	Mutators() []Mutator
+}
+
+// GeneratorProvider reports available code generation operators.
+type GeneratorProvider interface {
 	Generators() []Generator
 }
 

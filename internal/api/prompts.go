@@ -238,7 +238,8 @@ func relPath(root, p string) string {
 func conventionFor(p *project.Project, pl plugin.Plugin) plugin.GoldenConvention {
 	conv := defaultConvention(p)
 	if pl != nil {
-		if c := pl.GoldenLayout(); c.Root != "" || c.SegmentFunc != "" || c.CaseSegment != "" {
+		if layouter, ok := pl.(plugin.GoldenLayouter); ok {
+			c := layouter.GoldenLayout()
 			if c.Root != "" {
 				conv.Root = c.Root
 			}

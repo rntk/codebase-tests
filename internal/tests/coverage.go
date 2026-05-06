@@ -68,11 +68,15 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 
 	staticMap := make(map[string][]string)
 	for _, p := range c.registry.All() {
+		grapher, ok := p.(plugin.CallGrapher)
+		if !ok {
+			continue
+		}
 		for _, sym := range syms {
 			if sym.Kind != "function" && sym.Kind != "method" {
 				continue
 			}
-			graph, err := p.CallGraph(sym)
+			graph, err := grapher.CallGraph(sym)
 			if err != nil {
 				continue
 			}
@@ -87,7 +91,11 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 	// Run-level coverage
 	var report plugin.CoverageReport
 	for _, p := range c.registry.All() {
-		r, err := p.Coverage(ctx, plugin.TestSelection{}, opts)
+		coverager, ok := p.(plugin.Coverager)
+		if !ok {
+			continue
+		}
+		r, err := coverager.Coverage(ctx, plugin.TestSelection{}, opts)
 		if err == nil {
 			report = r
 			break

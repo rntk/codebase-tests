@@ -128,7 +128,7 @@ func (p *Plugin) DiscoverTests(file plugin.File) ([]plugin.TestFunc, error) {
 		pos := fset.Position(fn.Pos())
 		qualifiedName := fmt.Sprintf("%s.%s", pkg, fn.Name.Name)
 		test := plugin.TestFunc{
-			ID:      fmt.Sprintf("go:%s:%s", relFile, qualifiedName),
+			ID:      plugin.NewTestID("go", relFile, qualifiedName),
 			Name:    fn.Name.Name,
 			File:    relFile,
 			Line:    pos.Line,
@@ -259,7 +259,7 @@ func (p *Plugin) discoverSymbolsFromAST(root string) ([]plugin.Symbol, error) {
 			}
 			qualifiedName := fmt.Sprintf("%s.%s", pkg, fn.Name.Name)
 			symbols = append(symbols, plugin.Symbol{
-				ID:            fmt.Sprintf("go:%s:%s:%d:%d", relFile, qualifiedName, pos.Line, pos.Column),
+				ID:            plugin.NewSymbolID("go", relFile, qualifiedName, pos.Line, pos.Column),
 				Name:          fn.Name.Name,
 				QualifiedName: qualifiedName,
 				Kind:          kind,
@@ -359,9 +359,21 @@ func (p *Plugin) RunTests(ctx context.Context, sel plugin.TestSelection, opts pl
 	if len(sel.TestIDs) > 0 {
 		names := make(map[string]struct{})
 		for _, id := range sel.TestIDs {
-			parts := strings.Split(id, ":")
-			if len(parts) >= 3 {
-				names[parts[len(parts)-1]] = struct{}{}
+			parsed, err := plugin.ParseID(id)
+			if err != nil {
+				continue
+			}
+			name := parsed.CasePath
+			if name == "" {
+				name = parsed.QualifiedName
+				if strings.Contains(name, ".") {
+					nameParts := strings.Split(name, ".")
+					name = nameParts[len(nameParts)-1]
+				}
+			}
+			name = plugin.UnescapeSegment(name)
+			if name != "" {
+				names[name] = struct{}{}
 			}
 		}
 		if len(names) > 0 {
@@ -566,9 +578,9 @@ func findSubTests(fn *ast.FuncDecl, filePath, qualifiedName string) []plugin.Tes
 }
 
 func makeTestCase(filePath, qualifiedName, name string) plugin.TestCase {
-	casePath := escapeIDSegment(name)
+	casePath := plugin.EscapeSegment(name)
 	return plugin.TestCase{
-		ID:       fmt.Sprintf("go:%s:%s:%s", filePath, qualifiedName, casePath),
+		ID:       plugin.NewTestCaseID("go", filePath, qualifiedName, name),
 		Name:     name,
 		CasePath: casePath,
 	}
@@ -621,13 +633,6 @@ func dedupeTestCases(cases []plugin.TestCase) []plugin.TestCase {
 		seen[base]++
 	}
 	return cases
-}
-
-func escapeIDSegment(name string) string {
-	name = strings.ReplaceAll(name, "%", "%25")
-	name = strings.ReplaceAll(name, ":", "%3A")
-	name = strings.ReplaceAll(name, "/", "%2F")
-	return name
 }
 
 func pathToURI(path string) string {
@@ -712,7 +717,7 @@ func parseGoTestJSON(data []byte) (plugin.RunResult, error) {
 		entry, ok := testMap[ev.Test]
 		if !ok {
 			entry = &plugin.TestEntry{
-				ID:   fmt.Sprintf("go:%s:%s", ev.Package, ev.Test),
+				ID:   plugin.NewTestID("go", ev.Package, ev.Test),
 				Name: ev.Test,
 			}
 			testMap[ev.Test] = entry
@@ -879,7 +884,7 @@ func makePluginSymbol(ds lsp.DocumentSymbol, file, pkg, root string) plugin.Symb
 	}
 	qualifiedName := fmt.Sprintf("%s.%s", pkg, ds.Name)
 	return plugin.Symbol{
-		ID:            fmt.Sprintf("go:%s:%s:%d:%d", relFile, qualifiedName, ds.Range.Start.Line+1, ds.Range.Start.Character+1),
+		ID:            plugin.NewSymbolID("go", relFile, qualifiedName, ds.Range.Start.Line+1, ds.Range.Start.Character+1),
 		Name:          ds.Name,
 		QualifiedName: qualifiedName,
 		Kind:          lspSymbolKindToString(ds.Kind),
@@ -921,7 +926,7 @@ func (p *Plugin) callHierarchyItemToID(item lsp.CallHierarchyItem) string {
 	relPath := p.relativePath(path)
 	pkg := filepath.Base(filepath.Dir(path))
 	qualifiedName := fmt.Sprintf("%s.%s", pkg, item.Name)
-	return fmt.Sprintf("go:%s:%s:%d:%d", relPath, qualifiedName, item.Range.Start.Line+1, item.Range.Start.Character+1)
+	return plugin.NewSymbolID("go", relPath, qualifiedName, item.Range.Start.Line+1, item.Range.Start.Character+1)
 }
 
 func lspSymbolKindToString(kind int) string {

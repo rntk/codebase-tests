@@ -419,7 +419,7 @@ func parseTests(pluginName, path, pkg string, data []byte) []plugin.TestFunc {
 			}
 			qualified := qualify(pkg, display)
 			tests = append(tests, plugin.TestFunc{
-				ID:      fmt.Sprintf("%s:%s:%s", pluginName, path, qualified),
+				ID:      plugin.NewTestID(pluginName, path, qualified),
 				Name:    display,
 				File:    path,
 				Line:    lineNo,
@@ -478,7 +478,7 @@ func parseSymbols(pluginName, path, pkg string, data []byte) []plugin.Symbol {
 			name := line[m[2]:m[3]]
 			qualified := qualify(pkg, name)
 			symbols = append(symbols, plugin.Symbol{
-				ID:            fmt.Sprintf("%s:%s:%s:%d:%d", pluginName, path, qualified, lineNo, m[2]+1),
+				ID:            plugin.NewSymbolID(pluginName, path, qualified, lineNo, m[2]+1),
 				Name:          name,
 				QualifiedName: qualified,
 				Kind:          pattern.kind,
@@ -509,7 +509,7 @@ func documentSymbolsToPlugin(pluginName string, dsyms []lsp.DocumentSymbol, path
 				col := s.Range.Start.Character + 1
 				qualified := qualify(pkg, s.Name)
 				out = append(out, plugin.Symbol{
-					ID:            fmt.Sprintf("%s:%s:%s:%d:%d", pluginName, rel, qualified, line, col),
+					ID:            plugin.NewSymbolID(pluginName, rel, qualified, line, col),
 					Name:          s.Name,
 					QualifiedName: qualified,
 					Kind:          kind,
@@ -699,9 +699,18 @@ func stripLineComment(line string) string {
 func testNamePattern(ids []string) string {
 	var names []string
 	for _, id := range ids {
-		parts := strings.Split(id, ":")
-		if len(parts) > 0 {
-			names = append(names, regexp.QuoteMeta(parts[len(parts)-1]))
+		parsed, err := plugin.ParseID(id)
+		if err != nil {
+			continue
+		}
+		name := parsed.QualifiedName
+		if strings.Contains(name, ".") {
+			nameParts := strings.Split(name, ".")
+			name = nameParts[len(nameParts)-1]
+		}
+		name = plugin.UnescapeSegment(name)
+		if name != "" {
+			names = append(names, regexp.QuoteMeta(name))
 		}
 	}
 	return strings.Join(names, "|")
