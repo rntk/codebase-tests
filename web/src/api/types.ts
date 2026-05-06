@@ -130,6 +130,43 @@ export interface LineRange {
   hit: boolean;
 }
 
+export interface Mutator {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+}
+
+export interface MutationRunRequest {
+  language: string;
+  files?: string[];
+  packages?: string[];
+}
+
+export interface Mutant {
+  file: string;
+  line: number;
+  column?: number;
+  operator: string;
+  status: 'killed' | 'survived' | 'no-coverage' | 'timeout' | 'errored' | 'ignored' | string;
+  original?: string;
+  replacement?: string;
+}
+
+export interface MutationRunReport {
+  tool: string;
+  score: number;
+  total: number;
+  killed: number;
+  survived: number;
+  noCoverage: number;
+  timedOut: number;
+  errored: number;
+  duration: number;
+  output?: string;
+  mutants: Mutant[];
+}
+
 export interface TestPrompt {
   kind: 'create' | 'transform' | 'supported';
   language: string;

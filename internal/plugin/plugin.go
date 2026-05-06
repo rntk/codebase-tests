@@ -162,6 +162,47 @@ type Generator struct {
 	Description string `json:"description"`
 }
 
+// MutationRunner is an optional interface a Plugin may implement to support
+// codebase mutation testing by delegating to an external tool (e.g. Gremlins
+// for Go, StrykerJS for JavaScript/TypeScript). The orchestrator does not
+// edit source files — the tool runs in its own sandbox and returns a report.
+type MutationRunner interface {
+	RunMutations(ctx context.Context, scope MutationScope, opts RunOptions) (MutationRunReport, error)
+}
+
+// MutationScope narrows the set of files / packages a mutation run targets.
+// An empty scope means the whole project.
+type MutationScope struct {
+	Files    []string `json:"files,omitempty"`
+	Packages []string `json:"packages,omitempty"`
+}
+
+// MutationRunReport is a tool-agnostic summary of a mutation run.
+type MutationRunReport struct {
+	Tool       string   `json:"tool"`
+	Score      float64  `json:"score"` // 0..1, killed / (killed+survived)
+	Total      int      `json:"total"`
+	Killed     int      `json:"killed"`
+	Survived   int      `json:"survived"`
+	NoCoverage int      `json:"noCoverage"`
+	TimedOut   int      `json:"timedOut"`
+	Errored    int      `json:"errored"`
+	Mutants    []Mutant `json:"mutants"`
+	Duration   float64  `json:"duration"` // seconds
+	Output     string   `json:"output,omitempty"`
+}
+
+// Mutant describes one mutation produced by an external tool.
+type Mutant struct {
+	File        string `json:"file"`
+	Line        int    `json:"line"`
+	Column      int    `json:"column,omitempty"`
+	Operator    string `json:"operator"`
+	Status      string `json:"status"` // killed | survived | no-coverage | timeout | errored
+	Original    string `json:"original,omitempty"`
+	Replacement string `json:"replacement,omitempty"`
+}
+
 // PromptHinter is an optional interface a Plugin may implement to supply
 // language-specific guidance appended to test-generation prompts. When a
 // plugin does not implement it, prompts.HintsFor(language) is used instead.

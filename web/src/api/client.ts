@@ -9,6 +9,9 @@ import type {
   MutationResult,
   CoverageReport,
   TestPrompt,
+  Mutator,
+  MutationRunRequest,
+  MutationRunReport,
 } from './types.ts'
 import { getMockResponse } from './mockData.ts'
 
@@ -109,4 +112,19 @@ export function getTestTestPrompt(projectId: string, testId: string): Promise<Te
   return apiFetch(
     `/api/projects/${pathSegment(projectId)}/tests/${pathSegment(testId)}/test-prompt`
   )
+}
+
+export function listMutators(projectId: string): Promise<Mutator[]> {
+  return apiFetch(`/api/projects/${pathSegment(projectId)}/mutators`)
+}
+
+export function runMutationTesting(
+  projectId: string,
+  req: MutationRunRequest
+): Promise<MutationRunReport> {
+  return apiFetch(`/api/projects/${pathSegment(projectId)}/mutation-run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
 }

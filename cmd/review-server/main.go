@@ -138,6 +138,10 @@ func main() {
 	prh.RegisterRoutes(r)
 	prh.SetProject(p)
 
+	mh := api.NewMutatorsHandler(registry)
+	mh.RegisterRoutes(r)
+	mh.SetProject(p)
+
 	server := api.NewServer(r)
 	addr, err := server.Start()
 	if err != nil {

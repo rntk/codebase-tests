@@ -204,6 +204,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoldenCaseDiff'
 
+  /api/projects/{id}/mutators:
+    get:
+      operationId: listMutators
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Available codebase mutators
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Mutator'
+
+  /api/projects/{id}/mutation-run:
+    post:
+      operationId: runMutationTesting
+      description: |
+        Run an external mutation-testing tool (Gremlins for Go,
+        StrykerJS for JavaScript/TypeScript) over the project and
+        return a normalized report.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MutationRunRequest'
+      responses:
+        '200':
+          description: Mutation run report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MutationRunReport'
+
   /api/projects/{id}/coverage:
     get:
       operationId: getCoverage
@@ -363,6 +406,55 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DiffNode'
+
+    Mutator:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+
+    MutationRunRequest:
+      type: object
+      required: [language]
+      properties:
+        language: { type: string, description: "Plugin/language name (e.g. \"go\", \"javascript\")." }
+        files:
+          type: array
+          items: { type: string }
+        packages:
+          type: array
+          items: { type: string }
+
+    MutationRunReport:
+      type: object
+      properties:
+        tool: { type: string }
+        score: { type: number, description: "killed / (killed+survived), in [0,1]" }
+        total: { type: integer }
+        killed: { type: integer }
+        survived: { type: integer }
+        noCoverage: { type: integer }
+        timedOut: { type: integer }
+        errored: { type: integer }
+        duration: { type: number }
+        output: { type: string }
+        mutants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mutant'
+
+    Mutant:
+      type: object
+      properties:
+        file: { type: string }
+        line: { type: integer }
+        column: { type: integer }
+        operator: { type: string }
+        status: { type: string, enum: [killed, survived, no-coverage, timeout, errored, ignored] }
+        original: { type: string }
+        replacement: { type: string }
 
     CoverageReport:
       type: object
