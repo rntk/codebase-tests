@@ -21,7 +21,7 @@ func TestParseTestID(t *testing.T) {
 	}{
 		{"go:calc/add_test.go:calc.TestAdd", "go", "calc/add_test.go", "calc.TestAdd", "", false},
 		{"go:calc/add_test.go:calc.TestAdd:positive", "go", "calc/add_test.go", "calc.TestAdd", "positive", false},
-		{"go:path%2Fto%2Ffile.go:pkg.Func:case%3Aname", "go", "path%2Fto%2Ffile.go", "pkg.Func", "case%3Aname", false},
+		{"go:path/to/file.go:pkg.Func:case%3Aname", "go", "path/to/file.go", "pkg.Func", "case%3Aname", false},
 		{"invalid", "", "", "", "", true},
 		{"a:b:c:d:e", "", "", "", "", true},
 	}
@@ -51,10 +51,10 @@ func TestEscapeUnescapeSegment(t *testing.T) {
 		escaped string
 	}{
 		{"hello", "hello"},
-		{"a/b", "a%2Fb"},
+		{"a/b", "a/b"},
 		{"a:b", "a%3Ab"},
 		{"a%b", "a%25b"},
-		{"a/b:c", "a%2Fb%3Ac"},
+		{"a/b:c", "a/b%3Ac"},
 		{"a%3Ab", "a%253Ab"},
 	}
 

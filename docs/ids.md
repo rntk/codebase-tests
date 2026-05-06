@@ -30,10 +30,9 @@ plugin:path:qualifiedName:casePath
 ## Escaping Rules
 
 - Replace `:` with `%3A`.
-- Replace `/` with `%2F`.
 - Replace `%` with `%25`.
 
-These rules apply to every segment so IDs remain unambiguous.
+These rules apply to every segment so IDs remain unambiguous. `:` is escaped because it is the ID separator; `%` is escaped to keep the encoding reversible.
 
 ## Duplicate Handling
 

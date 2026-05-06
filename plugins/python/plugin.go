@@ -367,7 +367,7 @@ def qualify(pkg, name):
     return f"{pkg}.{name}" if pkg else name
 
 def case_path(name):
-    return str(name).replace("%", "%25").replace(":", "%3A").replace("/", "%2F")
+    return str(name).replace("%", "%25").replace(":", "%3A")
 
 def parametrize_cases(node, base_id):
     cases = []

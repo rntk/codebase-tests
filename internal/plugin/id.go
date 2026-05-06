@@ -78,7 +78,6 @@ func ParseTestID(testID string) (pluginName string, path string, qualifiedName s
 func EscapeSegment(s string) string {
 	s = strings.ReplaceAll(s, "%", "%25")
 	s = strings.ReplaceAll(s, ":", "%3A")
-	s = strings.ReplaceAll(s, "/", "%2F")
 	return s
 }
 
