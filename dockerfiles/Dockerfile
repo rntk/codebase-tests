@@ -52,4 +52,4 @@ ENV REVIEW_SERVER_STATIC_DIR=/opt/review-server/web/dist
 EXPOSE 8080
 
 ENTRYPOINT ["review-server"]
-CMD ["-project", "/workspace", "-plugins", "go"]
+CMD ["-project", "/workspace", "-plugins", "go,typescript"]

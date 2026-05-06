@@ -13,7 +13,7 @@
       "lspServerAddress": "pylsp"
     },
     {
-      "name": "javascript",
+      "name": "typescript",
       "language": "typescript",
       "lspServerAddress": "typescript-language-server --stdio"
     }

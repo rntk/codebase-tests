@@ -19,6 +19,7 @@ import (
 	goplugin "github.com/rntk/codebase-tests/plugins/go"
 	javascriptplugin "github.com/rntk/codebase-tests/plugins/javascript"
 	pythonplugin "github.com/rntk/codebase-tests/plugins/python"
+	typescriptplugin "github.com/rntk/codebase-tests/plugins/typescript"
 )
 
 func main() {
@@ -62,6 +63,8 @@ func main() {
 			registry.Register(goplugin.New())
 		case "javascript":
 			registry.Register(javascriptplugin.New())
+		case "typescript":
+			registry.Register(typescriptplugin.New())
 		case "python":
 			registry.Register(pythonplugin.New())
 		default:

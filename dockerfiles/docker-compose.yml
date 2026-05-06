@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: dockerfiles/Dockerfile
-    command: ["-project", "/workspace", "-plugins", "go"]
+    command: ["-project", "/workspace", "-plugins", "go,typescript"]
     environment:
       REVIEW_SERVER_ADDR: ":8080"
       REVIEW_SERVER_STATIC_DIR: /opt/review-server/web/dist
@@ -13,6 +13,7 @@ services:
       - ..:/workspace
     depends_on:
       - lsp-go
+      - lsp-typescript
     healthcheck:
       test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"ok\" <&3'"]
       interval: 10s
@@ -25,5 +26,14 @@ services:
       dockerfile: dockerfiles/Dockerfile.gopls
     ports:
       - "37374:37374"
+    volumes:
+      - ..:/workspace:ro
+
+  lsp-typescript:
+    build:
+      context: ..
+      dockerfile: dockerfiles/Dockerfile.typescript-language-server
+    ports:
+      - "37375:37375"
     volumes:
       - ..:/workspace:ro

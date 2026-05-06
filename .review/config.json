@@ -3,7 +3,7 @@
   "name": "workspace",
   "plugins": [
     { "name": "go",         "language": "go",         "lspServerAddress": "gopls" },
-    { "name": "javascript", "language": "typescript", "lspServerAddress": "typescript-language-server --stdio" }
+    { "name": "typescript", "language": "typescript", "lspServerAddress": "typescript-language-server --stdio" }
   ],
   "goldenRoot": "tests/golden",
   "toolTimeoutSeconds": 30

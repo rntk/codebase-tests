@@ -25,6 +25,7 @@ import (
 type Plugin struct {
 	mu          sync.RWMutex
 	client      *lsp.Client
+	name        string
 	root        string
 	timeout     time.Duration
 	env         map[string]string
@@ -36,6 +37,9 @@ var _ plugin.Plugin = (*Plugin)(nil)
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string {
+	if p.name != "" {
+		return p.name
+	}
 	return "javascript"
 }
 
@@ -60,13 +64,13 @@ func (p *Plugin) Initialize(ctx context.Context, cfg plugin.PluginConfig) error 
 		lspCommand = []string{"typescript-language-server", "--stdio"}
 	}
 	if _, err := exec.LookPath(lspCommand[0]); err != nil {
-		log.Printf("javascript plugin: %s not found in PATH; running in degraded mode (source discovery only)", lspCommand[0])
+		log.Printf("%s plugin: %s not found in PATH; running in degraded mode (source discovery only)", p.Name(), lspCommand[0])
 		return nil
 	}
 
 	p.client = lsp.NewClient(lspCommand, pathToURI(cfg.ProjectRoot), p.timeout)
 	if err := p.client.Start(ctx); err != nil {
-		log.Printf("javascript plugin: failed to start LSP client (%v); running in degraded mode", err)
+		log.Printf("%s plugin: failed to start LSP client (%v); running in degraded mode", p.Name(), err)
 		p.client = nil
 	}
 	return ctx.Err()
@@ -109,7 +113,7 @@ func (p *Plugin) DiscoverTests(file plugin.File) ([]plugin.TestFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	tests := parseTests(p.relativePath(file.Path), p.packageForFile(file.Path), data)
+	tests := parseTests(p.Name(), p.relativePath(file.Path), p.packageForFile(file.Path), data)
 	p.cacheTests(tests)
 	return tests, nil
 }
@@ -123,7 +127,7 @@ func (p *Plugin) DiscoverSymbols(root string) ([]plugin.Symbol, error) {
 			p.cacheSymbols(syms)
 			return syms, nil
 		}
-		log.Printf("javascript plugin: LSP symbol discovery returned %d symbols (err=%v); falling back to source scan", len(syms), err)
+		log.Printf("%s plugin: LSP symbol discovery returned %d symbols (err=%v); falling back to source scan", p.Name(), len(syms), err)
 	}
 	syms, err := p.discoverSymbolsFromSource(root)
 	if err == nil {
@@ -280,7 +284,7 @@ func (p *Plugin) discoverSymbolsFromLSP(root string) ([]plugin.Symbol, error) {
 		if derr != nil {
 			return nil
 		}
-		symbols = append(symbols, documentSymbolsToPlugin(dsyms, path, p.packageForFile(path), p.root)...)
+		symbols = append(symbols, documentSymbolsToPlugin(p.Name(), dsyms, path, p.packageForFile(path), p.root)...)
 		return nil
 	})
 	return symbols, err
@@ -305,7 +309,7 @@ func (p *Plugin) discoverSymbolsFromSource(root string) ([]plugin.Symbol, error)
 		if rerr != nil {
 			return rerr
 		}
-		symbols = append(symbols, parseSymbols(p.relativePath(path), p.packageForFile(path), data)...)
+		symbols = append(symbols, parseSymbols(p.Name(), p.relativePath(path), p.packageForFile(path), data)...)
 		return nil
 	})
 	sort.Slice(symbols, func(i, j int) bool {
@@ -393,7 +397,7 @@ func (p *Plugin) fillTestIDs(result *plugin.RunResult) {
 var testCallRE = regexp.MustCompile("\\b(?:test|it)(?:\\.(?:only|skip|todo|concurrent))?\\s*\\(\\s*['\"`]([^'\"`]+)['\"`]")
 var describeRE = regexp.MustCompile("\\bdescribe(?:\\.(?:only|skip|concurrent))?\\s*\\(\\s*['\"`]([^'\"`]+)['\"`]")
 
-func parseTests(path, pkg string, data []byte) []plugin.TestFunc {
+func parseTests(pluginName, path, pkg string, data []byte) []plugin.TestFunc {
 	var tests []plugin.TestFunc
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	var describes []describeFrame
@@ -413,7 +417,7 @@ func parseTests(path, pkg string, data []byte) []plugin.TestFunc {
 			}
 			qualified := qualify(pkg, display)
 			tests = append(tests, plugin.TestFunc{
-				ID:      fmt.Sprintf("javascript:%s:%s", path, qualified),
+				ID:      fmt.Sprintf("%s:%s:%s", pluginName, path, qualified),
 				Name:    display,
 				File:    path,
 				Line:    lineNo,
@@ -459,7 +463,7 @@ var symbolPatterns = []struct {
 	{"function", regexp.MustCompile(`^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?function\b`)},
 }
 
-func parseSymbols(path, pkg string, data []byte) []plugin.Symbol {
+func parseSymbols(pluginName, path, pkg string, data []byte) []plugin.Symbol {
 	var symbols []plugin.Symbol
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for lineNo := 1; scanner.Scan(); lineNo++ {
@@ -472,7 +476,7 @@ func parseSymbols(path, pkg string, data []byte) []plugin.Symbol {
 			name := line[m[2]:m[3]]
 			qualified := qualify(pkg, name)
 			symbols = append(symbols, plugin.Symbol{
-				ID:            fmt.Sprintf("javascript:%s:%s:%d:%d", path, qualified, lineNo, m[2]+1),
+				ID:            fmt.Sprintf("%s:%s:%s:%d:%d", pluginName, path, qualified, lineNo, m[2]+1),
 				Name:          name,
 				QualifiedName: qualified,
 				Kind:          pattern.kind,
@@ -487,7 +491,7 @@ func parseSymbols(path, pkg string, data []byte) []plugin.Symbol {
 	return symbols
 }
 
-func documentSymbolsToPlugin(dsyms []lsp.DocumentSymbol, path, pkg, root string) []plugin.Symbol {
+func documentSymbolsToPlugin(pluginName string, dsyms []lsp.DocumentSymbol, path, pkg, root string) []plugin.Symbol {
 	var out []plugin.Symbol
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -503,7 +507,7 @@ func documentSymbolsToPlugin(dsyms []lsp.DocumentSymbol, path, pkg, root string)
 				col := s.Range.Start.Character + 1
 				qualified := qualify(pkg, s.Name)
 				out = append(out, plugin.Symbol{
-					ID:            fmt.Sprintf("javascript:%s:%s:%d:%d", rel, qualified, line, col),
+					ID:            fmt.Sprintf("%s:%s:%s:%d:%d", pluginName, rel, qualified, line, col),
 					Name:          s.Name,
 					QualifiedName: qualified,
 					Kind:          kind,
