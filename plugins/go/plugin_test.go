@@ -19,7 +19,7 @@ func sampleRoot(t *testing.T) string {
 }
 
 func initPlugin(t *testing.T) *Plugin {
-	p := New().(*Plugin)
+	p := New()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cfg := plugin.PluginConfig{
@@ -236,7 +236,7 @@ func TestMutatorsAndGenerators(t *testing.T) {
 	if len(p.Generators()) != 0 {
 		t.Fatal("expected no generators")
 	}
-	if _, ok := p.(plugin.MutationRunner); !ok {
+	if _, ok := any(p).(plugin.MutationRunner); !ok {
 		t.Fatal("expected Plugin to implement MutationRunner")
 	}
 }

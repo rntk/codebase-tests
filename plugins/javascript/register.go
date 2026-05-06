@@ -1,13 +1,11 @@
 package javascriptplugin
 
-import "github.com/rntk/codebase-tests/internal/plugin"
-
 // New returns a new JavaScript/TypeScript plugin instance.
-func New() plugin.Plugin {
+func New() *Plugin {
 	return NewWithName("javascript")
 }
 
 // NewWithName returns a JavaScript/TypeScript plugin instance registered under name.
-func NewWithName(name string) plugin.Plugin {
+func NewWithName(name string) *Plugin {
 	return &Plugin{name: name}
 }
