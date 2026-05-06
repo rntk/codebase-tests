@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+const (
+	negativeNumberMutation = -1
+	largeNumberMutation    = 1_000_000_000
+)
+
 // MutationResult is the result of running a single mutation.
 type MutationResult struct {
 	Mutation string `json:"mutation"`
@@ -53,6 +58,11 @@ func walkAndMutate(path string, val any, report func(string, any)) {
 
 	switch v := val.(type) {
 	case map[string]any:
+		report(label("(nulled)"), nil)
+		if len(v) > 0 {
+			report(label("(emptied)"), map[string]any{})
+		}
+
 		for k, child := range v {
 			childPath := k
 			if path != "" {
@@ -72,6 +82,11 @@ func walkAndMutate(path string, val any, report func(string, any)) {
 			})
 		}
 	case []any:
+		report(label("(nulled)"), nil)
+		if len(v) > 0 {
+			report(label("(emptied)"), []any{})
+		}
+
 		for i, child := range v {
 			childPath := fmt.Sprintf("%s[%d]", path, i)
 
@@ -87,16 +102,25 @@ func walkAndMutate(path string, val any, report func(string, any)) {
 			})
 		}
 	case string:
+		report(label("(nulled)"), nil)
 		if v != "" {
 			report(label("(emptied)"), "")
 		}
 		report(label("(mutated)"), "MUTATED_"+v)
 	case float64:
+		report(label("(nulled)"), nil)
 		if v != 0 {
 			report(label("(zeroed)"), 0)
 		}
+		if v != negativeNumberMutation {
+			report(label("(negative)"), negativeNumberMutation)
+		}
+		if v != largeNumberMutation {
+			report(label("(large)"), largeNumberMutation)
+		}
 		report(label("(incremented)"), v+1)
 	case bool:
+		report(label("(nulled)"), nil)
 		report(label("(toggled)"), !v)
 	case nil:
 		report(label("(unnulled)"), "MUTATED_NULL")

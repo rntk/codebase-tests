@@ -32,6 +32,17 @@ func containsPrefix(ss []string, prefix string) bool {
 	return false
 }
 
+func mutationData(t *testing.T, ms []Mutation, desc string) []byte {
+	t.Helper()
+	for _, m := range ms {
+		if m.Description == desc {
+			return m.Data
+		}
+	}
+	t.Fatalf("missing mutation %q in %v", desc, descriptions(ms))
+	return nil
+}
+
 func TestMutateJSONInvalid(t *testing.T) {
 	if _, err := MutateJSON([]byte("not json")); err == nil {
 		t.Fatal("expected error on invalid input")
@@ -45,13 +56,20 @@ func TestMutateJSONObject(t *testing.T) {
 	}
 	descs := descriptions(ms)
 	for _, want := range []string{
+		"(nulled)",
+		"(emptied)",
 		"name (removed)",
 		"age (removed)",
 		"on (removed)",
+		"name (nulled)",
 		"name (emptied)",
 		"name (mutated)",
+		"age (nulled)",
 		"age (zeroed)",
+		"age (negative)",
+		"age (large)",
 		"age (incremented)",
+		"on (nulled)",
 		"on (toggled)",
 	} {
 		if !contains(descs, want) {
@@ -83,6 +101,9 @@ func TestMutateJSONNestedSibling(t *testing.T) {
 		if err := json.Unmarshal(m.Data, &v); err != nil {
 			t.Fatal(err)
 		}
+		if m.Description == "(nulled)" || m.Description == "(emptied)" {
+			continue
+		}
 		removedA := m.Description == "a (removed)"
 		removedB := m.Description == "b (removed)"
 		if _, ok := v["a"]; !ok && !removedA {
@@ -100,13 +121,50 @@ func TestMutateJSONArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	descs := descriptions(ms)
-	for _, want := range []string{"[0] (removed)", "[1] (removed)", "[2] (removed)"} {
+	for _, want := range []string{"(nulled)", "(emptied)", "[0] (removed)", "[1] (removed)", "[2] (removed)"} {
 		if !contains(descs, want) {
 			t.Errorf("missing %q in %v", want, descs)
 		}
 	}
 	if !containsPrefix(descs, "[0]") {
 		t.Errorf("expected element-level mutations, got %v", descs)
+	}
+}
+
+func TestMutateJSONContainerBoundaries(t *testing.T) {
+	ms, err := MutateJSON([]byte(`{"obj":{"x":1},"arr":[true]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var objNulled map[string]any
+	if err := json.Unmarshal(mutationData(t, ms, "obj (nulled)"), &objNulled); err != nil {
+		t.Fatal(err)
+	}
+	if objNulled["obj"] != nil {
+		t.Errorf("obj (nulled) set obj to %v, want nil", objNulled["obj"])
+	}
+
+	var arrEmptied map[string]any
+	if err := json.Unmarshal(mutationData(t, ms, "arr (emptied)"), &arrEmptied); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := arrEmptied["arr"].([]any)
+	if !ok || len(arr) != 0 {
+		t.Errorf("arr (emptied) set arr to %#v, want empty array", arrEmptied["arr"])
+	}
+}
+
+func TestMutateJSONNumericBoundaries(t *testing.T) {
+	ms, err := MutateJSON([]byte(`{"n":5}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	descs := descriptions(ms)
+	for _, want := range []string{"n (nulled)", "n (zeroed)", "n (negative)", "n (large)", "n (incremented)"} {
+		if !contains(descs, want) {
+			t.Errorf("missing %q in %v", want, descs)
+		}
 	}
 }
 
@@ -131,6 +189,9 @@ func TestMutateJSONEmptyStringNoEmptyMutation(t *testing.T) {
 		if m.Description == "k (emptied)" {
 			t.Error("should not emit (emptied) for already-empty string")
 		}
+	}
+	if !contains(descriptions(ms), "k (nulled)") {
+		t.Errorf("expected empty string to still get null mutation, got %v", descriptions(ms))
 	}
 }
 
