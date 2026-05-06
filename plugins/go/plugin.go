@@ -494,9 +494,9 @@ func (p *Plugin) GoldenLayout() plugin.GoldenConvention {
 	}
 }
 
-// Mutators returns an empty list (v1 deferred).
+// Mutators advertises the external mutation tool wired up for Go.
 func (p *Plugin) Mutators() []plugin.Mutator {
-	return nil
+	return []plugin.Mutator{gremlinsCatalog}
 }
 
 // Generators returns an empty list (v1 deferred).

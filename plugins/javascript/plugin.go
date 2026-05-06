@@ -223,8 +223,10 @@ func (p *Plugin) GoldenLayout() plugin.GoldenConvention {
 	}
 }
 
-// Mutators returns no JavaScript mutators in v1.
-func (p *Plugin) Mutators() []plugin.Mutator { return nil }
+// Mutators advertises the external mutation tool wired up for JS/TS.
+func (p *Plugin) Mutators() []plugin.Mutator {
+	return []plugin.Mutator{strykerCatalog}
+}
 
 // Generators returns no JavaScript generators in v1.
 func (p *Plugin) Generators() []plugin.Generator { return nil }

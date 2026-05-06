@@ -229,10 +229,14 @@ func TestGoldenLayout(t *testing.T) {
 
 func TestMutatorsAndGenerators(t *testing.T) {
 	p := New()
-	if len(p.Mutators()) != 0 {
-		t.Fatal("expected no mutators")
+	mutators := p.Mutators()
+	if len(mutators) != 1 || mutators[0].ID != "gremlins" {
+		t.Fatalf("expected one gremlins mutator, got %+v", mutators)
 	}
 	if len(p.Generators()) != 0 {
 		t.Fatal("expected no generators")
+	}
+	if _, ok := p.(plugin.MutationRunner); !ok {
+		t.Fatal("expected Plugin to implement MutationRunner")
 	}
 }
