@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useParams } from 'react-router-dom'
-import { getProject } from './api/client.ts'
+import { getCoverage, getProject } from './api/client.ts'
 import { useApi } from './hooks/useApi.ts'
 import { ProjectHeader } from './components/ProjectHeader.tsx'
 import { ModeSwitcher } from './components/ModeSwitcher.tsx'
@@ -13,13 +13,23 @@ import { DiffPage } from './pages/DiffPage.tsx'
 function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>()
   const { data: project, loading, error } = useApi(() => getProject(projectId!), [projectId])
+  const {
+    data: coverage,
+    loading: coverageLoading,
+    error: coverageError,
+  } = useApi(() => getCoverage(projectId!), [projectId])
 
   if (loading) return <LoadingState message="Loading project…" />
   if (error) return <ErrorState error={error} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <ProjectHeader project={project ?? undefined} />
+      <ProjectHeader
+        project={project ?? undefined}
+        coverage={coverage ?? undefined}
+        coverageLoading={coverageLoading}
+        coverageError={coverageError ?? undefined}
+      />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <ModeSwitcher projectId={projectId!} />
         <main style={{ flex: 1, overflow: 'auto' }}>

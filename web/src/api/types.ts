@@ -114,8 +114,14 @@ export interface DiffNode {
 export interface CoverageReport {
   scope: 'run' | 'test';
   percentage: number;
+  languages?: LanguageCoverage[];
   files?: FileCoverage[];
   uncovered?: string[];
+}
+
+export interface LanguageCoverage {
+  language: string;
+  percentage: number;
 }
 
 export interface FileCoverage {

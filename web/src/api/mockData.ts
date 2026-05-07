@@ -116,6 +116,7 @@ const tests: TestFunc[] = [
 const coverage: CoverageReport = {
   scope: 'run',
   percentage: 66.7,
+  languages: [{ language: 'go', percentage: 66.7 }],
   files: [
     {
       path: 'calc/add.go',
