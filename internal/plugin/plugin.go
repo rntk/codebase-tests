@@ -150,10 +150,17 @@ type TestEntry struct {
 
 // CoverageReport holds coverage data.
 type CoverageReport struct {
-	Scope      string         `json:"scope"` // "run" or "test"
-	Percentage float64        `json:"percentage"`
-	Files      []FileCoverage `json:"files,omitempty"`
-	Uncovered  []string       `json:"uncovered,omitempty"` // symbol IDs with no coverage
+	Scope      string             `json:"scope"` // "run" or "test"
+	Percentage float64            `json:"percentage"`
+	Languages  []LanguageCoverage `json:"languages,omitempty"`
+	Files      []FileCoverage     `json:"files,omitempty"`
+	Uncovered  []string           `json:"uncovered,omitempty"` // symbol IDs with no coverage
+}
+
+// LanguageCoverage is the aggregate percentage for a single language/plugin.
+type LanguageCoverage struct {
+	Language   string  `json:"language"`
+	Percentage float64 `json:"percentage"`
 }
 
 // FileCoverage is per-file coverage details.

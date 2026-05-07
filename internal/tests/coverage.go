@@ -367,9 +367,22 @@ func mergeCoverageReports(reports []plugin.CoverageReport) plugin.CoverageReport
 		percentage = float64(hitLines) / float64(totalLines) * 100
 	}
 
+	var languages []plugin.LanguageCoverage
+	seenLang := make(map[string]bool)
+	for _, r := range reports {
+		for _, lc := range r.Languages {
+			if seenLang[lc.Language] {
+				continue
+			}
+			seenLang[lc.Language] = true
+			languages = append(languages, lc)
+		}
+	}
+
 	return plugin.CoverageReport{
 		Scope:      "run",
 		Percentage: percentage,
 		Files:      files,
+		Languages:  languages,
 	}
 }

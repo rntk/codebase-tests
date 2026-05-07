@@ -461,6 +461,10 @@ components:
       properties:
         scope: { type: string, enum: [run, test] }
         percentage: { type: number }
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/LanguageCoverage'
         files:
           type: array
           items:
@@ -468,6 +472,12 @@ components:
         uncovered:
           type: array
           items: { type: string }
+
+    LanguageCoverage:
+      type: object
+      properties:
+        language: { type: string }
+        percentage: { type: number }
 
     FileCoverage:
       type: object

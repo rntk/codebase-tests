@@ -487,6 +487,9 @@ func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts pl
 		return plugin.CoverageReport{}, err
 	}
 	report.Scope = "run"
+	if len(report.Files) > 0 || report.Percentage > 0 {
+		report.Languages = []plugin.LanguageCoverage{{Language: p.Name(), Percentage: report.Percentage}}
+	}
 
 	// Identify uncovered function symbols.
 	symbols, _ := p.DiscoverSymbols(wd)

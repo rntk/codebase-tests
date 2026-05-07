@@ -194,23 +194,31 @@ func (p *Plugin) RunTests(ctx context.Context, sel plugin.TestSelection, opts pl
 
 // Coverage runs npm test with coverage enabled and reads common Istanbul/V8 JSON output.
 func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts plugin.RunOptions) (plugin.CoverageReport, error) {
-	wd := p.workingDir(opts)
+	projectRoot := p.workingDir(opts)
+	npmDir := findNpmRoot(projectRoot)
+	if npmDir == "" {
+		return plugin.CoverageReport{Scope: "run"}, nil
+	}
+
 	args := []string{"test", "--", "--coverage"}
 	if sel.File != "" {
-		args = append(args, relOrAbs(wd, sel.File))
+		args = append(args, relOrAbs(npmDir, sel.File))
 	}
 	if len(sel.TestIDs) > 0 {
 		args = append(args, "-t", testNamePattern(sel.TestIDs))
 	}
-	_, _ = pluginutil.RunCommand(ctx, wd, opts, p.env, "npm", args...)
+	_, _ = pluginutil.RunCommand(ctx, npmDir, opts, p.env, "npm", args...)
 
-	report, err := parseCoverageFinal(filepath.Join(wd, "coverage", "coverage-final.json"), wd)
+	report, err := parseCoverageFinal(filepath.Join(npmDir, "coverage", "coverage-final.json"), projectRoot)
 	if err != nil {
 		return plugin.CoverageReport{Scope: "run"}, nil
 	}
 	report.Scope = "run"
+	if len(report.Files) > 0 || report.Percentage > 0 {
+		report.Languages = []plugin.LanguageCoverage{{Language: p.Name(), Percentage: report.Percentage}}
+	}
 
-	symbols, _ := p.DiscoverSymbols(wd)
+	symbols, _ := p.DiscoverSymbols(projectRoot)
 	for _, sym := range symbols {
 		if sym.Kind != "function" && sym.Kind != "method" {
 			continue
@@ -221,6 +229,48 @@ func (p *Plugin) Coverage(ctx context.Context, sel plugin.TestSelection, opts pl
 		}
 	}
 	return report, nil
+}
+
+// findNpmRoot returns the directory of the closest package.json under root,
+// preferring root itself, then the shallowest match. Returns "" if none.
+func findNpmRoot(root string) string {
+	if root == "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(root, "package.json")); err == nil {
+		return root
+	}
+	best := ""
+	bestDepth := -1
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if shouldSkipDir(d.Name()) && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "package.json" {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		rel, err := filepath.Rel(root, dir)
+		if err != nil {
+			return nil
+		}
+		depth := 0
+		if rel != "." {
+			depth = len(strings.Split(rel, string(filepath.Separator)))
+		}
+		if best == "" || depth < bestDepth {
+			best = dir
+			bestDepth = depth
+		}
+		return nil
+	})
+	return best
 }
 
 // GoldenLayout returns the default Plan-0 convention.
