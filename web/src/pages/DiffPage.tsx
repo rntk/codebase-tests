@@ -14,6 +14,118 @@ function formatRawContent(value: unknown, emptyMessage: string): string {
   return JSON.stringify(value, null, 2) ?? String(value)
 }
 
+function truncateForPrompt(value: string, max = 6000): string {
+  if (value.length <= max) return value
+  return `${value.slice(0, max)}\n\n[truncated ${value.length - max} characters]`
+}
+
+function formatFunctionList(funcs: SourceSnippet[]): string {
+  if (!funcs.length) return '- No referenced functions were detected for this test.'
+  return funcs
+    .map((fn) => {
+      const name = fn.qualifiedName || fn.name
+      const location = fn.file ? `${fn.file}:${fn.line}` : 'unknown file'
+      return `- ${name} (${fn.kind || 'symbol'}) at ${location}`
+    })
+    .join('\n')
+}
+
+function formatFunctionSources(funcs: SourceSnippet[]): string {
+  const withSource = funcs.filter((fn) => fn.sourceCode)
+  if (!withSource.length) return 'No referenced function source is available.'
+  return withSource
+    .map((fn) => {
+      const name = fn.qualifiedName || fn.name
+      return `### ${name} (${fn.file}:${fn.line})\n\`\`\`\n${truncateForPrompt(fn.sourceCode ?? '')}\n\`\`\``
+    })
+    .join('\n\n')
+}
+
+function mutationReason(result: MutationResult): string {
+  if (result.survived) {
+    return 'The mutation survived: the selected test still passed after the golden input was changed. This means the test or golden data is too weak and should fail for this mutation.'
+  }
+  return 'The mutation was killed: the selected test failed after the golden input was changed. This result is expected, but the runner output is included in case it reveals an unexpected failure mode.'
+}
+
+function buildMutationFixPrompt({
+  projectId,
+  testId,
+  caseId,
+  caseName,
+  language,
+  test,
+  functions,
+  inputContent,
+  outputContent,
+  result,
+}: {
+  projectId?: string
+  testId?: string
+  caseId?: string
+  caseName?: string
+  language: string
+  test?: TestFunc | null
+  functions: SourceSnippet[]
+  inputContent: string
+  outputContent: string
+  result: MutationResult
+}): string {
+  const testName = test?.name ?? testId ?? 'unknown test'
+  const testLocation = test?.file ? `${test.file}:${test.line}:${test.column}` : 'unknown file'
+  const testSource = test?.sourceCode
+    ? `\`\`\`\n${truncateForPrompt(test.sourceCode)}\n\`\`\``
+    : 'Test source is not available.'
+  const runnerOutput = result.output?.trim()
+    ? truncateForPrompt(result.output.trim(), 8000)
+    : 'No runner output was captured.'
+
+  return `You are fixing a weak or failing golden test after mutation testing.
+
+Goal:
+Update the test and/or golden fixture so the test catches the mutation below. Preserve correct production behavior unless the test reveals a real implementation bug.
+
+Mutation result:
+- Mutation: ${result.mutation}
+- Result: ${result.survived ? 'SURVIVED (bad: test should have failed)' : 'KILLED (expected)'}
+- Reason: ${mutationReason(result)}
+
+Test context:
+- Project: ${projectId ?? 'unknown project'}
+- Language: ${languageLabel(language)}
+- Test name: ${testName}
+- Test id: ${testId ?? 'unknown test id'}
+- Test file: ${testLocation}
+- Golden case: ${caseName ?? caseId ?? 'unknown case'}
+- Golden case id: ${caseId ?? 'unknown case id'}
+
+Referenced functions:
+${formatFunctionList(functions)}
+
+Runner output:
+\`\`\`
+${runnerOutput}
+\`\`\`
+
+Current test source:
+${testSource}
+
+Current golden input:
+\`\`\`json
+${truncateForPrompt(inputContent)}
+\`\`\`
+
+Current expected golden output:
+\`\`\`json
+${truncateForPrompt(outputContent)}
+\`\`\`
+
+Referenced function source:
+${formatFunctionSources(functions)}
+
+Please explain the failing reason briefly, then make the smallest code or fixture change needed so this mutation is caught by the test.`
+}
+
 function hasDiffNode(node?: DiffNode | null): boolean {
   if (!node) return false
   if (node.kind !== 'unchanged') return true
@@ -199,6 +311,7 @@ export function DiffPage() {
   const [mutationResults, setMutationResults] = useState<MutationResult[] | null>(null)
   const [mutationLoading, setMutationLoading] = useState(false)
   const [mutationError, setMutationError] = useState<Error | null>(null)
+  const [copiedMutationIndex, setCopiedMutationIndex] = useState<number | null>(null)
 
   const {
     data,
@@ -322,6 +435,7 @@ export function DiffPage() {
     setMutationLoading(true)
     setMutationError(null)
     setMutationResults(null)
+    setCopiedMutationIndex(null)
     try {
       const res = await mutateGoldenCase(projectId!, testId!, caseId!)
       setMutationResults(res)
@@ -329,6 +443,29 @@ export function DiffPage() {
       setMutationError(e as Error)
     } finally {
       setMutationLoading(false)
+    }
+  }
+
+  async function copyMutationPrompt(result: MutationResult, index: number) {
+    const prompt = buildMutationFixPrompt({
+      projectId,
+      testId,
+      caseId,
+      caseName: data?.name,
+      language: currentLanguage,
+      test,
+      functions: referencedFuncs,
+      inputContent: inContent,
+      outputContent: outContent,
+      result,
+    })
+
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopiedMutationIndex(index)
+      setTimeout(() => setCopiedMutationIndex(null), 1500)
+    } catch {
+      // ignore clipboard failures; the button simply stays unchanged
     }
   }
 
@@ -438,6 +575,7 @@ export function DiffPage() {
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
                     <th style={{ padding: 4 }}>Mutation</th>
                     <th style={{ padding: 4 }}>Result</th>
+                    <th style={{ padding: 4 }}>Prompt</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -446,6 +584,23 @@ export function DiffPage() {
                       <td style={{ padding: 4 }}>{r.mutation}</td>
                       <td style={{ padding: 4, color: r.survived ? '#d32f2f' : '#2e7d32' }}>
                         {r.survived ? '❌ Survived (test should have failed)' : '✅ Killed (expected)'}
+                      </td>
+                      <td style={{ padding: 4 }}>
+                        <button
+                          onClick={() => copyMutationPrompt(r, i)}
+                          title="Copy an LLM prompt with the test, mutation, failure reason, files, and referenced functions"
+                          style={{
+                            padding: '2px 8px',
+                            cursor: 'pointer',
+                            background: r.survived ? '#fff' : '#f8f8f8',
+                            border: '1px solid #ccc',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {copiedMutationIndex === i ? 'Copied ✓' : 'Copy fix prompt'}
+                        </button>
                       </td>
                     </tr>
                   ))}

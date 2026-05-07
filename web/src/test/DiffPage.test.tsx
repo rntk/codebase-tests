@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
-import { getGoldenCase, getGoldenDiff, getTest, listSymbols } from '../api/client.ts'
+import { getGoldenCase, getGoldenDiff, getTest, listSymbols, mutateGoldenCase } from '../api/client.ts'
 import { DiffPage } from '../pages/DiffPage.tsx'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -11,6 +11,7 @@ vi.mock('../api/client.ts', () => ({
   getGoldenCase: vi.fn(),
   getTest: vi.fn(),
   listSymbols: vi.fn(),
+  mutateGoldenCase: vi.fn(),
 }))
 
 const goldenDir = path.resolve(__dirname, '../../../tests/golden/web/src/test/DiffPage/DiffPage > loads current golden content for raw mode')
@@ -26,6 +27,7 @@ describe('DiffPage', () => {
     vi.mocked(getGoldenCase).mockReset()
     vi.mocked(getTest).mockReset()
     vi.mocked(listSymbols).mockReset()
+    vi.mocked(mutateGoldenCase).mockReset()
   })
 
   describe('loads current golden content for raw mode', () => {
@@ -88,5 +90,51 @@ describe('DiffPage', () => {
         }
       })
     }
+
+    it('copies an LLM fix prompt for a survived mutation', async () => {
+      const inp = JSON.parse(
+        fs.readFileSync(path.join(goldenDir, 'raw_mode_loads_golden_content.in.json'), 'utf-8')
+      )
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, {
+        clipboard: { writeText },
+      })
+
+      vi.mocked(getGoldenDiff).mockResolvedValue(inp.goldenDiff)
+      vi.mocked(getGoldenCase).mockResolvedValue(inp.goldenCase)
+      vi.mocked(getTest).mockResolvedValue(inp.test)
+      vi.mocked(listSymbols).mockResolvedValue(inp.symbols)
+      vi.mocked(mutateGoldenCase).mockResolvedValue([
+        {
+          mutation: 'b (mutated)',
+          survived: true,
+          output: 'PASS calc.TestAdd',
+        },
+      ])
+
+      const route = `/projects/${encodeURIComponent(inp.projectId)}/tests/${encodeURIComponent(inp.testId)}/golden/${encodeURIComponent(inp.caseId)}/diff`
+
+      render(
+        <MemoryRouter initialEntries={[route]}>
+          <Routes>
+            <Route path="/projects/:projectId/tests/:testId/golden/:caseId/diff" element={<DiffPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+
+      await screen.findByText('Diff: positive')
+      fireEvent.click(screen.getByRole('button', { name: 'Mutate' }))
+      await screen.findByText('❌ Survived (test should have failed)')
+      fireEvent.click(screen.getByRole('button', { name: 'Copy fix prompt' }))
+
+      await waitFor(() => expect(writeText).toHaveBeenCalled())
+      const prompt = writeText.mock.calls[0][0]
+      expect(prompt).toContain('Test name: TestAdd')
+      expect(prompt).toContain('Test file: calc/add_test.go:10:1')
+      expect(prompt).toContain('Mutation: b (mutated)')
+      expect(prompt).toContain('The mutation survived')
+      expect(prompt).toContain('calc.Add (function) at calc/add.go:1')
+      expect(prompt).toContain('PASS calc.TestAdd')
+    })
   })
 })
