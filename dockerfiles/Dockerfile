@@ -27,6 +27,9 @@ FROM golang:${GO_VERSION}-bookworm AS gopls-build
 ARG GOPLS_VERSION
 RUN GOBIN=/out go install golang.org/x/tools/gopls@${GOPLS_VERSION}
 
+FROM golang:${GO_VERSION}-bookworm AS gremlins-build
+RUN GOBIN=/out go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+
 FROM golang:${GO_VERSION}-bookworm AS runtime
 ARG NODE_VERSION
 RUN apt-get update \
@@ -42,6 +45,7 @@ RUN apt-get update \
 
 COPY --from=go-build /out/review-server /usr/local/bin/review-server
 COPY --from=gopls-build /out/gopls /usr/local/bin/gopls
+COPY --from=gremlins-build /out/gremlins /usr/local/bin/gremlins
 COPY --from=web-build /src/web/dist /opt/review-server/web/dist
 
 WORKDIR /workspace

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { listSymbols, getSymbolTestPrompt, listMutators, runMutationTesting } from '../api/client.ts'
-import type { Symbol, TestPrompt, Mutator, MutationRunReport } from '../api/types.ts'
+import type { Symbol, TestPrompt, Mutator, Mutant, MutationRunReport } from '../api/types.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { TreeView, type TreeNode } from '../components/TreeView.tsx'
 import { languageFromId, languageIcon, languageLabel } from '../api/ids.ts'
@@ -9,6 +9,98 @@ import { LoadingState } from '../components/LoadingState.tsx'
 import { ErrorState } from '../components/ErrorState.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PromptModal } from '../components/PromptModal.tsx'
+
+function truncateForPrompt(value: string, max = 8000): string {
+  if (value.length <= max) return value
+  return `${value.slice(0, max)}\n\n[truncated ${value.length - max} characters]`
+}
+
+function formatCoveredBy(testIds?: string[]): string {
+  if (!testIds?.length) return '- No covering tests were reported for this function.'
+  return testIds.map((testId) => `- ${testId}`).join('\n')
+}
+
+function mutationStatusReason(status: string): string {
+  switch (status) {
+    case 'survived':
+      return 'The mutant survived: the test suite still passed after this code mutation. Add or strengthen tests so this behavioral change fails.'
+    case 'no-coverage':
+      return 'The mutant had no coverage: no executed test reached this mutated code. Add coverage for this function or code path.'
+    case 'timeout':
+      return 'The mutant timed out while running tests. Investigate whether the mutation caused an infinite loop or whether the test needs tighter assertions/timeouts.'
+    case 'errored':
+      return 'The mutation run errored. Use the runner output to identify whether the test harness, mutation tool, or code under test needs a targeted fix.'
+    case 'killed':
+      return 'The mutant was killed: at least one test failed after this code mutation. This is expected, but the context may still help investigate the failing test output.'
+    default:
+      return `The mutation tool reported status "${status}". Use the context below to decide whether tests should be strengthened or the mutation runner needs attention.`
+  }
+}
+
+function buildMutationRunFixPrompt({
+  projectId,
+  symbol,
+  mutant,
+  report,
+}: {
+  projectId?: string
+  symbol: Symbol
+  mutant: Mutant
+  report: MutationRunReport
+}): string {
+  const functionLocation = `${symbol.file}:${symbol.line}:${symbol.column}`
+  const mutantLocation = `${mutant.file}:${mutant.line}${mutant.column ? `:${mutant.column}` : ''}`
+  const functionSource = symbol.sourceCode
+    ? `\`\`\`\n${truncateForPrompt(symbol.sourceCode)}\n\`\`\``
+    : 'Function source is not available in this view.'
+  const runnerOutput = report.output?.trim()
+    ? truncateForPrompt(report.output.trim())
+    : 'No runner output was captured.'
+
+  return `You are fixing a weak or failing test found by function-level mutation testing.
+
+Goal:
+Update or add the smallest useful test so this mutation is caught. Preserve correct production behavior unless the test result exposes a real implementation bug.
+
+Mutation result:
+- Tool: ${report.tool}
+- Mutant status: ${mutant.status.toUpperCase()}
+- Reason: ${mutationStatusReason(mutant.status)}
+- Mutated file: ${mutantLocation}
+- Operator: ${mutant.operator}
+- Original: ${mutant.original ?? 'not reported'}
+- Replacement: ${mutant.replacement ?? 'not reported'}
+
+Function context:
+- Project: ${projectId ?? 'unknown project'}
+- Function: ${symbol.qualifiedName || symbol.name}
+- Kind: ${symbol.kind}
+- Package: ${symbol.package}
+- Location: ${functionLocation}
+- Covered: ${symbol.covered ? 'yes' : 'no'}
+
+Covering tests:
+${formatCoveredBy(symbol.coveredBy)}
+
+Mutation run summary:
+- Score: ${(report.score * 100).toFixed(1)}%
+- Killed: ${report.killed}
+- Survived: ${report.survived}
+- No coverage: ${report.noCoverage}
+- Timed out: ${report.timedOut}
+- Errored: ${report.errored}
+- Total: ${report.total}
+
+Runner output:
+\`\`\`
+${runnerOutput}
+\`\`\`
+
+Current function source:
+${functionSource}
+
+Please explain the likely gap briefly, then make the smallest test change needed for this mutant status.`
+}
 
 function groupByFile(symbols: Symbol[]): Map<string, Symbol[]> {
   const map = new Map<string, Symbol[]>()
@@ -66,7 +158,7 @@ function toTreeNodes(symbols: Symbol[]): TreeNode[] {
 export function FunctionsPage() {
   const { projectId, symbolId } = useParams<{ projectId: string; symbolId?: string }>()
   const navigate = useNavigate()
-  const { data, loading, error } = useApi(() => listSymbols(projectId!), [projectId])
+  const { data, loading, error } = useApi(() => listSymbols(projectId!, true), [projectId])
 
   const tree = useMemo(() => (data ? toTreeNodes(data) : []), [data])
 
@@ -86,6 +178,7 @@ export function FunctionsPage() {
   const [mutationReport, setMutationReport] = useState<MutationRunReport | null>(null)
   const [mutationLoading, setMutationLoading] = useState(false)
   const [mutationError, setMutationError] = useState<Error | null>(null)
+  const [copiedMutantIndex, setCopiedMutantIndex] = useState<number | null>(null)
 
   async function openPrompt(id: string) {
     setPromptOpen(true)
@@ -119,6 +212,7 @@ export function FunctionsPage() {
     setMutationLoading(true)
     setMutationError(null)
     setMutationReport(null)
+    setCopiedMutantIndex(null)
     try {
       const report = await runMutationTesting(projectId!, {
         language: mutator.language,
@@ -129,6 +223,24 @@ export function FunctionsPage() {
       setMutationError(e as Error)
     } finally {
       setMutationLoading(false)
+    }
+  }
+
+  async function copyMutationPrompt(mutant: MutationRunReport['mutants'][number], index: number) {
+    if (!selected || !mutationReport) return
+    const prompt = buildMutationRunFixPrompt({
+      projectId,
+      symbol: selected,
+      mutant,
+      report: mutationReport,
+    })
+
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopiedMutantIndex(index)
+      setTimeout(() => setCopiedMutantIndex(null), 1500)
+    } catch {
+      // ignore clipboard failures; the button simply stays unchanged
     }
   }
 
@@ -236,6 +348,7 @@ export function FunctionsPage() {
                                 <th>Line</th>
                                 <th>Operator</th>
                                 <th>Status</th>
+                                <th>Prompt</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -246,6 +359,23 @@ export function FunctionsPage() {
                                   <td>{m.operator}</td>
                                   <td style={{ color: m.status === 'killed' ? '#2e7d32' : m.status === 'survived' ? '#d32f2f' : '#888' }}>
                                     {m.status}
+                                  </td>
+                                  <td>
+                                    <button
+                                      onClick={() => copyMutationPrompt(m, i)}
+                                      title="Copy an LLM prompt with the selected function, mutant, coverage, and runner output"
+                                      style={{
+                                        padding: '2px 8px',
+                                        cursor: 'pointer',
+                                        background: m.status === 'killed' ? '#f8f8f8' : '#fff',
+                                        border: '1px solid #ccc',
+                                        borderRadius: 4,
+                                        fontSize: 11,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {copiedMutantIndex === i ? 'Copied ✓' : 'Copy fix prompt'}
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
