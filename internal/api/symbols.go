@@ -49,7 +49,9 @@ func (h *SymbolsHandler) List(w http.ResponseWriter, r *http.Request) {
 	withSource := r.URL.Query().Get("withSource") == "true"
 	language := r.URL.Query().Get("language")
 
-	data, err := h.coverage.Build(r.Context(), p.Path, defaultRunOptions(p))
+	// Use the fast path: symbols + static call-graph only, no test runs.
+	// Run-level coverage refinement happens via /coverage when needed.
+	data, err := h.coverage.BuildSymbols(r.Context(), p.Path)
 	if err != nil {
 		// Fallback to symbol discovery without coverage
 		syms, _ := tests.DiscoverSymbols(h.coverage.Registry(), p.Path)

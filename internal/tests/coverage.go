@@ -24,6 +24,10 @@ type CoverageData struct {
 	StaticMap map[string][]string // symbol ID -> []test IDs that statically reach it
 	Uncovered []string            // symbol IDs with no coverage
 	Report    plugin.CoverageReport
+
+	// hasReport tracks whether the run-level coverage report has been
+	// computed. BuildSymbols leaves it false; Build sets it true.
+	hasReport bool
 }
 
 // NewCoverage creates a coverage service.
@@ -46,8 +50,16 @@ func (c *Coverage) Invalidate(projectPath string) {
 	delete(c.cache, projectPath)
 }
 
-// Build computes coverage data for a project.
-func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.RunOptions) (*CoverageData, error) {
+// callGraphWorkers caps the number of concurrent CallGrapher requests.
+// Each request is a few LSP round-trips against gopls (or equivalent), so
+// running them in parallel hides per-request latency without overloading
+// the language server.
+const callGraphWorkers = 8
+
+// BuildSymbols returns symbols, tests, and static call-graph data for a
+// project without running tests for run-level coverage. It is the fast
+// path used by the function listing endpoint.
+func (c *Coverage) BuildSymbols(ctx context.Context, projectPath string) (*CoverageData, error) {
 	c.mu.RLock()
 	if cached, ok := c.cache[projectPath]; ok {
 		c.mu.RUnlock()
@@ -55,40 +67,39 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 	}
 	c.mu.RUnlock()
 
-	syms, err := DiscoverSymbols(c.registry, projectPath)
+	data, err := c.buildBase(ctx, projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("discover symbols: %w", err)
+		return nil, err
 	}
 
-	disc := NewDiscovery(c.registry)
-	tests, err := disc.DiscoverAll(projectPath)
+	c.mu.Lock()
+	if existing, ok := c.cache[projectPath]; ok && existing.hasReport {
+		// A full build (with run report) raced ahead of us; prefer it.
+		data = existing
+	} else {
+		c.cache[projectPath] = data
+	}
+	c.mu.Unlock()
+	return data, nil
+}
+
+// Build computes full coverage data including the run-level report. It
+// shells out to per-language coverage tools (e.g. `go test -coverprofile`)
+// and is therefore expensive — callers that only need the symbol list
+// should use BuildSymbols instead.
+func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.RunOptions) (*CoverageData, error) {
+	c.mu.RLock()
+	if cached, ok := c.cache[projectPath]; ok && cached.hasReport {
+		c.mu.RUnlock()
+		return cached, nil
+	}
+	c.mu.RUnlock()
+
+	base, err := c.buildBase(ctx, projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("discover tests: %w", err)
+		return nil, err
 	}
 
-	staticMap := make(map[string][]string)
-	for _, p := range c.registry.All() {
-		grapher, ok := p.(plugin.CallGrapher)
-		if !ok {
-			continue
-		}
-		for _, sym := range syms {
-			if sym.Kind != "function" && sym.Kind != "method" {
-				continue
-			}
-			graph, err := grapher.CallGraph(sym)
-			if err != nil {
-				continue
-			}
-			for _, test := range tests {
-				if graphMentionsTest(graph, test) {
-					staticMap[sym.ID] = append(staticMap[sym.ID], test.ID)
-				}
-			}
-		}
-	}
-
-	// Run-level coverage: aggregate reports from all plugins.
 	var reports []plugin.CoverageReport
 	for _, p := range c.registry.All() {
 		coverager, ok := p.(plugin.Coverager)
@@ -102,12 +113,12 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 	}
 	report := mergeCoverageReports(reports)
 
-	uncoveredSet := make(map[string]bool)
 	reportUncovered := make(map[string]bool)
 	for _, id := range report.Uncovered {
 		reportUncovered[id] = true
 	}
-	for _, sym := range syms {
+	uncoveredSet := make(map[string]bool)
+	for _, sym := range base.Symbols {
 		if sym.Kind != "function" && sym.Kind != "method" {
 			continue
 		}
@@ -115,29 +126,142 @@ func (c *Coverage) Build(ctx context.Context, projectPath string, opts plugin.Ru
 		if reportUncovered[sym.ID] {
 			runCovered = false
 		}
-		if len(staticMap[sym.ID]) == 0 && !runCovered {
+		if len(base.StaticMap[sym.ID]) == 0 && !runCovered {
 			uncoveredSet[sym.ID] = true
 		}
 	}
-
 	var uncovered []string
 	for id := range uncoveredSet {
 		uncovered = append(uncovered, id)
 	}
 	report.Uncovered = uncovered
 
-	data := &CoverageData{
+	base.Report = report
+	base.Uncovered = uncovered
+	base.hasReport = true
+
+	c.mu.Lock()
+	c.cache[projectPath] = base
+	c.mu.Unlock()
+	return base, nil
+}
+
+// buildBase computes everything that does not require running tests:
+// symbol discovery, test discovery, and the static call-graph map. The
+// call-graph step issues one CallGrapher request per function/method
+// against each language plugin; those requests are run concurrently with
+// a bounded worker pool to hide per-request LSP latency.
+func (c *Coverage) buildBase(_ context.Context, projectPath string) (*CoverageData, error) {
+	syms, err := DiscoverSymbols(c.registry, projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("discover symbols: %w", err)
+	}
+
+	disc := NewDiscovery(c.registry)
+	tests, err := disc.DiscoverAll(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("discover tests: %w", err)
+	}
+
+	staticMap := buildStaticCallMap(c.registry, syms, tests)
+
+	uncoveredSet := make(map[string]bool)
+	for _, sym := range syms {
+		if sym.Kind != "function" && sym.Kind != "method" {
+			continue
+		}
+		if len(staticMap[sym.ID]) == 0 {
+			uncoveredSet[sym.ID] = true
+		}
+	}
+	var uncovered []string
+	for id := range uncoveredSet {
+		uncovered = append(uncovered, id)
+	}
+
+	return &CoverageData{
 		Symbols:   syms,
 		Tests:     tests,
 		StaticMap: staticMap,
 		Uncovered: uncovered,
-		Report:    report,
+	}, nil
+}
+
+type callGraphJob struct {
+	plug plugin.CallGrapher
+	sym  plugin.Symbol
+}
+
+type callGraphResult struct {
+	symID string
+	ids   []string
+}
+
+func buildStaticCallMap(registry *plugin.Registry, syms []plugin.Symbol, tests []plugin.TestFunc) map[string][]string {
+	out := make(map[string][]string)
+	if len(syms) == 0 || len(tests) == 0 {
+		return out
 	}
 
-	c.mu.Lock()
-	c.cache[projectPath] = data
-	c.mu.Unlock()
-	return data, nil
+	var jobs []callGraphJob
+	for _, p := range registry.All() {
+		grapher, ok := p.(plugin.CallGrapher)
+		if !ok {
+			continue
+		}
+		for _, sym := range syms {
+			if sym.Kind != "function" && sym.Kind != "method" {
+				continue
+			}
+			jobs = append(jobs, callGraphJob{plug: grapher, sym: sym})
+		}
+	}
+	if len(jobs) == 0 {
+		return out
+	}
+
+	workers := callGraphWorkers
+	if len(jobs) < workers {
+		workers = len(jobs)
+	}
+	jobCh := make(chan callGraphJob)
+	resCh := make(chan callGraphResult, len(jobs))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobCh {
+				graph, err := j.plug.CallGraph(j.sym)
+				if err != nil {
+					continue
+				}
+				var ids []string
+				for _, t := range tests {
+					if graphMentionsTest(graph, t) {
+						ids = append(ids, t.ID)
+					}
+				}
+				if len(ids) > 0 {
+					resCh <- callGraphResult{symID: j.sym.ID, ids: ids}
+				}
+			}
+		}()
+	}
+	go func() {
+		for _, j := range jobs {
+			jobCh <- j
+		}
+		close(jobCh)
+	}()
+	wg.Wait()
+	close(resCh)
+
+	for r := range resCh {
+		out[r.symID] = append(out[r.symID], r.ids...)
+	}
+	return out
 }
 
 func contains(slice []string, item string) bool {
