@@ -155,11 +155,13 @@ export function TreeView({
   selectedId,
   onSelect,
   filter,
+  onFilterChange,
 }: {
   nodes: TreeNode[]
   selectedId?: string
   onSelect?: (id: string) => void
   filter?: string
+  onFilterChange?: (filter: string) => void
 }) {
   const filteredNodes = useMemo(
     () => filterTree(nodes, filter ?? ''),
@@ -169,6 +171,28 @@ export function TreeView({
 
   return (
     <div data-testid="tree-view">
+      {onFilterChange && (
+        <input
+          type="text"
+          placeholder="Filter..."
+          value={filter ?? ''}
+          onChange={(e) => onFilterChange(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '6px 8px',
+            border: 'none',
+            borderBottom: '1px solid #eee',
+            outline: 'none',
+            fontSize: 13,
+            position: 'sticky',
+            top: 0,
+            background: '#fff',
+            zIndex: 1,
+          }}
+          data-testid="tree-view-filter"
+        />
+      )}
       {filteredNodes.map((node) => (
         <TreeItem
           key={node.id}

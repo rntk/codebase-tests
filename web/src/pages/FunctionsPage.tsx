@@ -251,25 +251,11 @@ export function FunctionsPage() {
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, overflow: 'auto', borderRight: '1px solid #eee' }}>
-        <input
-          type="text"
-          placeholder="Filter..."
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '6px 8px',
-            border: 'none',
-            borderBottom: '1px solid #eee',
-            outline: 'none',
-            fontSize: 13,
-          }}
-        />
         <TreeView
           nodes={tree}
           selectedId={symbolId}
           filter={filterText || undefined}
+          onFilterChange={(f) => setFilterText(f)}
           onSelect={(id) => {
             if (!id.startsWith('file:') && !id.startsWith('lang:')) {
               navigate(`/projects/${projectId}/functions/${encodeURIComponent(id)}`)

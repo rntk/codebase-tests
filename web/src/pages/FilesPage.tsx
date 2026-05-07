@@ -52,23 +52,13 @@ export function FilesPage() {
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, overflow: 'auto', borderRight: '1px solid #eee' }}>
-        <input
-          type="text"
-          placeholder="Filter files..."
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '6px 8px',
-            border: 'none',
-            borderBottom: '1px solid #eee',
-            outline: 'none',
-            fontSize: 13,
-          }}
-          data-testid="file-filter-input"
+        <TreeView
+          nodes={tree}
+          selectedId={selectedPath}
+          onSelect={setSelectedPath}
+          filter={filterText || undefined}
+          onFilterChange={(f) => setFilterText(f)}
         />
-        <TreeView nodes={tree} selectedId={selectedPath} onSelect={setSelectedPath} filter={filterText || undefined} />
       </div>
       <div style={{ flex: 1, padding: 16, overflow: 'auto' }}>
         {selectedNode ? (

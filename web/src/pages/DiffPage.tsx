@@ -306,6 +306,7 @@ export function DiffPage() {
   const currentLanguage = testId ? languageFromId(testId) : 'unknown'
   const symbolLanguage = currentLanguage === 'unknown' ? undefined : currentLanguage
   const [selectedFuncId, setSelectedFuncId] = useState<string | null>(null)
+  const [symbolFilter, setSymbolFilter] = useState('')
   const funcEls = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const [mutationResults, setMutationResults] = useState<MutationResult[] | null>(null)
@@ -365,6 +366,17 @@ export function DiffPage() {
     () => (symbols ?? []).filter((sym) => !symbolLanguage || languageFromId(sym.id) === symbolLanguage),
     [symbols, symbolLanguage]
   )
+
+  const filteredLanguageSymbols = useMemo(() => {
+    if (!symbolFilter) return languageSymbols
+    const q = symbolFilter.toLowerCase()
+    return languageSymbols.filter(
+      (sym) =>
+        sym.name.toLowerCase().includes(q) ||
+        (sym.qualifiedName?.toLowerCase().includes(q) ?? false) ||
+        sym.file.toLowerCase().includes(q)
+    )
+  }, [languageSymbols, symbolFilter])
 
   // Symbols not in coveredFuncSources are still selectable from the symbols
   // panel; this map lets the function-code panel resolve any selected id.
@@ -767,14 +779,33 @@ export function DiffPage() {
             )}
           </div>
           <div style={{ maxHeight: 400, overflow: 'auto' }}>
+            <input
+              type="text"
+              placeholder="Filter symbols..."
+              value={symbolFilter}
+              onChange={(e) => setSymbolFilter(e.target.value)}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '6px 12px',
+                border: 'none',
+                borderBottom: '1px solid #eee',
+                outline: 'none',
+                fontSize: 13,
+                position: 'sticky',
+                top: 0,
+                background: '#fff',
+                zIndex: 1,
+              }}
+            />
             {symbolsLoading ? (
               <pre style={{ padding: 12, margin: 0, fontSize: 12 }}>Loading symbols...</pre>
             ) : symbolsError ? (
               <pre style={{ padding: 12, margin: 0, fontSize: 12, color: '#dc2626' }}>
                 Error loading symbols: {symbolsError.message}
               </pre>
-            ) : languageSymbols.length > 0 ? (
-              languageSymbols.map((sym) => {
+            ) : filteredLanguageSymbols.length > 0 ? (
+              filteredLanguageSymbols.map((sym) => {
                 const isSelected = selectedFuncId === sym.id
                 return (
                   <div
@@ -828,6 +859,10 @@ export function DiffPage() {
                   </div>
                 )
               })
+            ) : languageSymbols.length > 0 ? (
+              <pre style={{ padding: 12, margin: 0, fontSize: 12, color: '#777' }}>
+                No symbols match the filter.
+              </pre>
             ) : (
               <pre style={{ padding: 12, margin: 0, fontSize: 12, color: '#777' }}>
                 No symbols found.
