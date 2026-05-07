@@ -352,16 +352,13 @@ export function TestsPage() {
                   <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
                     {selected.coveredFuncs.map((fid) => (
                       <li key={fid}>
-                        <a
-                          href={`#/projects/${projectId}/functions/${fid}`}
+                        <Link
+                          to={`/projects/${projectId}/functions/${encodeURIComponent(fid)}`}
                           style={{ color: '#1976d2' }}
-                          onClick={(e) => {
-                            e.preventDefault()
-                            navigate(`/projects/${projectId}/functions/${encodeURIComponent(fid)}`)
-                          }}
+                          title="Open in Functions (run mutations)"
                         >
                           {fid}
-                        </a>
+                        </Link>
                       </li>
                     ))}
                   </ul>

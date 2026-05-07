@@ -1,4 +1,4 @@
-import { useState, useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 
 export interface TreeNodeMarker {
   kind: 'success' | 'changed'
@@ -43,6 +43,22 @@ function fuzzyMatch(text: string, query: string): boolean {
   return true
 }
 
+function ancestorIdsOf(nodes: TreeNode[], targetId: string): Set<string> {
+  const result = new Set<string>()
+  function walk(ns: TreeNode[], stack: string[]): boolean {
+    for (const n of ns) {
+      if (n.id === targetId) {
+        for (const id of stack) result.add(id)
+        return true
+      }
+      if (n.children && walk(n.children, [...stack, n.id])) return true
+    }
+    return false
+  }
+  walk(nodes, [])
+  return result
+}
+
 function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   if (!query) return nodes
   return nodes.reduce<TreeNode[]>((acc, node) => {
@@ -66,21 +82,31 @@ function TreeItem({
   selectedId,
   onSelect,
   expandAll,
+  forceExpandedIds,
 }: {
   node: TreeNode
   depth: number
   selectedId?: string
   onSelect?: (id: string) => void
   expandAll?: boolean
+  forceExpandedIds?: Set<string>
 }) {
   const [expanded, setExpanded] = useState(depth < 2)
   const hasChildren = (node.children?.length ?? 0) > 0
   const isSelected = selectedId === node.id
-  const effectiveExpanded = expandAll ? true : expanded
+  const isOnSelectedPath = forceExpandedIds?.has(node.id) ?? false
+  const effectiveExpanded = expandAll || isOnSelectedPath || expanded
+  const itemRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isSelected) return
+    itemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [isSelected])
 
   return (
     <div>
       <div
+        ref={itemRef}
         role="button"
         tabIndex={0}
         onClick={() => {
@@ -98,7 +124,9 @@ function TreeItem({
           padding: '4px 8px',
           paddingLeft: 8 + depth * 16,
           cursor: 'pointer',
-          background: isSelected ? '#e3f2fd' : 'transparent',
+          background: isSelected ? '#bbdefb' : 'transparent',
+          borderLeft: isSelected ? '3px solid #1976d2' : '3px solid transparent',
+          fontWeight: isSelected ? 600 : 400,
           display: 'flex',
           alignItems: 'center',
           gap: 4,
@@ -142,6 +170,7 @@ function TreeItem({
               selectedId={selectedId}
               onSelect={onSelect}
               expandAll={expandAll}
+              forceExpandedIds={forceExpandedIds}
             />
           ))}
         </div>
@@ -168,6 +197,10 @@ export function TreeView({
     [nodes, filter],
   )
   const expandAll = !!filter
+  const forceExpandedIds = useMemo(
+    () => (selectedId ? ancestorIdsOf(filteredNodes, selectedId) : undefined),
+    [filteredNodes, selectedId],
+  )
 
   return (
     <div data-testid="tree-view">
@@ -201,6 +234,7 @@ export function TreeView({
           selectedId={selectedId}
           onSelect={onSelect}
           expandAll={expandAll}
+          forceExpandedIds={forceExpandedIds}
         />
       ))}
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { getGoldenCase, getGoldenDiff, getTest, listSymbols, mutateGoldenCase } from '../api/client.ts'
 import { useApi } from '../hooks/useApi.ts'
 import { DiffTree } from '../components/DiffTree.tsx'
@@ -195,11 +195,13 @@ function findOccurrences(
 function InteractiveCode({
   code,
   funcs,
+  projectId,
   selectedFuncId,
   onFunctionClick,
 }: {
   code: string
   funcs: SourceSnippet[]
+  projectId?: string
   selectedFuncId: string | null
   onFunctionClick: (func: SourceSnippet) => void
 }) {
@@ -213,21 +215,40 @@ function InteractiveCode({
     if (occ.start > pos) segments.push(code.slice(pos, occ.start))
     const isSelected = selectedFuncId === occ.func.id
     segments.push(
-      <span
-        key={`${occ.func.id}-${occ.start}`}
-        onClick={() => onFunctionClick(occ.func)}
-        title={`View code: ${occ.func.qualifiedName || occ.func.name}`}
-        style={{
-          cursor: 'pointer',
-          backgroundColor: isSelected ? '#fef08a' : '#dbeafe',
-          color: isSelected ? '#713f12' : '#1d4ed8',
-          borderRadius: 2,
-          padding: '0 2px',
-          textDecoration: 'underline',
-          textDecorationStyle: 'dotted',
-        }}
-      >
-        {code.slice(occ.start, occ.end)}
+      <span key={`${occ.func.id}-${occ.start}`} style={{ whiteSpace: 'nowrap' }}>
+        <span
+          onClick={() => onFunctionClick(occ.func)}
+          title={`View code: ${occ.func.qualifiedName || occ.func.name}`}
+          style={{
+            cursor: 'pointer',
+            backgroundColor: isSelected ? '#fef08a' : '#dbeafe',
+            color: isSelected ? '#713f12' : '#1d4ed8',
+            borderRadius: 2,
+            padding: '0 2px',
+            textDecoration: 'underline',
+            textDecorationStyle: 'dotted',
+          }}
+        >
+          {code.slice(occ.start, occ.end)}
+        </span>
+        {projectId && (
+          <Link
+            to={`/projects/${projectId}/functions/${encodeURIComponent(occ.func.id)}`}
+            onClick={(e) => e.stopPropagation()}
+            title={`Run mutations: ${occ.func.qualifiedName || occ.func.name}`}
+            aria-label={`Run mutations on ${occ.func.qualifiedName || occ.func.name}`}
+            style={{
+              marginLeft: 1,
+              fontSize: 9,
+              verticalAlign: 'super',
+              color: '#1d4ed8',
+              textDecoration: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            ↗
+          </Link>
+        )}
       </span>
     )
     pos = occ.end
@@ -244,8 +265,8 @@ function CodeBlock({
   blockRef,
   children,
 }: {
-  title: string
-  subtitle?: string
+  title: ReactNode
+  subtitle?: ReactNode
   code?: string
   highlighted?: boolean
   blockRef?: (el: HTMLDivElement | null) => void
@@ -716,6 +737,7 @@ export function DiffPage() {
                   <InteractiveCode
                     code={test.sourceCode}
                     funcs={referencedFuncs}
+                    projectId={projectId}
                     selectedFuncId={selectedFuncId}
                     onFunctionClick={handleFunctionClick}
                   />
@@ -727,9 +749,31 @@ export function DiffPage() {
                 blockRef={selectedFunc ? (el) => setFuncRef(selectedFunc.id, el) : undefined}
                 highlighted={!!selectedFunc}
                 title={
-                  selectedFunc
-                    ? `Function Code: ${selectedFunc.qualifiedName || selectedFunc.name}`
-                    : 'Function Code'
+                  selectedFunc ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span>Function Code: {selectedFunc.qualifiedName || selectedFunc.name}</span>
+                      {projectId && (
+                        <Link
+                          to={`/projects/${projectId}/functions/${encodeURIComponent(selectedFunc.id)}`}
+                          title="Open in Functions to run mutation tests"
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 500,
+                            color: '#1d4ed8',
+                            textDecoration: 'none',
+                            padding: '2px 6px',
+                            border: '1px solid #bfdbfe',
+                            borderRadius: 3,
+                            background: '#eff6ff',
+                          }}
+                        >
+                          Run mutations ↗
+                        </Link>
+                      )}
+                    </span>
+                  ) : (
+                    'Function Code'
+                  )
                 }
                 subtitle={selectedFunc ? `${selectedFunc.file}:${selectedFunc.line}` : undefined}
                 code={
@@ -855,6 +899,24 @@ export function DiffPage() {
                     </span>
                     {sym.covered && (
                       <span title="Covered" style={{ color: '#16a34a', flexShrink: 0 }}>✓</span>
+                    )}
+                    {projectId && (
+                      <Link
+                        to={`/projects/${projectId}/functions/${encodeURIComponent(sym.id)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        title={`Open ${sym.qualifiedName || sym.name} in Functions (run mutations)`}
+                        aria-label={`Open ${sym.qualifiedName || sym.name} in Functions`}
+                        style={{
+                          flexShrink: 0,
+                          color: '#1d4ed8',
+                          textDecoration: 'none',
+                          padding: '0 6px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        ↗
+                      </Link>
                     )}
                   </div>
                 )
