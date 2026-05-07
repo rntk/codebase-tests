@@ -58,7 +58,7 @@ describe('TreeView', () => {
   it('highlights selected node', () => {
     render(<TreeView nodes={nodes} selectedId="child1" />)
     const item = screen.getByTestId('tree-item-child1')
-    expect(item.style.background).toBe('rgb(227, 242, 253)')
+    expect(item.style.background).toBe('rgb(187, 222, 251)')
   })
 
   it('renders node markers', () => {

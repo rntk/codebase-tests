@@ -196,12 +196,13 @@ export function FunctionsPage() {
 
   async function loadMutators() {
     setMutatorsLoading(true)
+    setMutationError(null)
     try {
       const all = await listMutators(projectId!)
       const lang = selected ? languageFromId(selected.id) : ''
       setMutators(all.filter((m) => m.language === lang))
     } catch (e) {
-      // ignore
+      setMutationError(e as Error)
     } finally {
       setMutatorsLoading(false)
     }
@@ -378,7 +379,14 @@ export function FunctionsPage() {
                         )}
                       </div>
                     )}
-                    {mutationError && <span style={{ color: '#d32f2f' }}>Error: {mutationError.message}</span>}
+                    {mutationError && (
+                      <span style={{ color: '#d32f2f' }}>
+                        Error: {mutationError.message}
+                        {mutationError.message.includes('NetworkError') || mutationError.message.includes('Failed to fetch')
+                          ? ' — the server may be unavailable or the mutation run timed out. Ensure the backend is running and try again.'
+                          : ''}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

@@ -54,7 +54,7 @@ func (s *Server) Start() (string, error) {
 	s.http = &http.Server{
 		Handler:      s.router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 5 * time.Minute,
 	}
 	go func() {
 		if err := s.http.Serve(ln); err != nil && err != http.ErrServerClosed {

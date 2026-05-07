@@ -6,6 +6,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.0.0",
+    "@stryker-mutator/vitest-runner": "^9.0.0",
     "typescript": "^5.3.3",
     "vitest": "^1.2.2"
   }
