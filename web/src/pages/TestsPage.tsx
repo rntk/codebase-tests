@@ -57,12 +57,15 @@ function toTreeNodes(tests: TestFunc[]): TreeNode[] {
           {languageIcon(language)} {languageLabel(language)}
         </span>
       ),
+      filterText: languageLabel(language),
       children: Array.from(byFile.entries()).map(([file, funcs]) => ({
         id: `file:${language}:${file}`,
         label: <span>📁 {file}</span>,
+        filterText: file,
         children: funcs.map((t) => ({
           id: t.id,
           label: <span>🧪 {t.name}</span>,
+          filterText: t.name,
           marker: hasGoldenTestData(t)
             ? {
                 kind: 'success',
@@ -73,6 +76,7 @@ function toTreeNodes(tests: TestFunc[]): TreeNode[] {
           children: t.subCases?.map((c: TestCase) => ({
             id: c.id,
             label: <span>📂 {c.name}</span>,
+            filterText: c.name,
           })),
         })),
       })),
@@ -284,6 +288,7 @@ export function TestsPage() {
     return data.find((t) => t.id === testId)
   }, [data, testId])
 
+  const [filterText, setFilterText] = useState('')
   const [prompt, setPrompt] = useState<TestPrompt | null>(null)
   const [promptOpen, setPromptOpen] = useState(false)
   const [promptLoading, setPromptLoading] = useState(false)
@@ -310,9 +315,25 @@ export function TestsPage() {
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, overflow: 'auto', borderRight: '1px solid #eee' }}>
+        <input
+          type="text"
+          placeholder="Filter..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '6px 8px',
+            border: 'none',
+            borderBottom: '1px solid #eee',
+            outline: 'none',
+            fontSize: 13,
+          }}
+        />
         <TreeView
           nodes={tree}
           selectedId={testId}
+          filter={filterText || undefined}
           onSelect={(id) => {
             if (!id.startsWith('file:') && !id.startsWith('lang:')) {
               navigate(`/projects/${projectId}/tests/${encodeURIComponent(id)}`)

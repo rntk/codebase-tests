@@ -43,11 +43,14 @@ function toTreeNodes(symbols: Symbol[]): TreeNode[] {
           {languageIcon(language)} {languageLabel(language)}
         </span>
       ),
+      filterText: languageLabel(language),
       children: Array.from(byFile.entries()).map(([file, syms]) => ({
         id: `file:${language}:${file}`,
         label: <span>📁 {file}</span>,
+        filterText: file,
         children: syms.map((s) => ({
           id: s.id,
+          filterText: s.name,
           label: (
             <span>
               {s.covered ? '✅' : '⚠️'}{' '}
@@ -72,6 +75,7 @@ export function FunctionsPage() {
     return data.find((s) => s.id === symbolId)
   }, [data, symbolId])
 
+  const [filterText, setFilterText] = useState('')
   const [prompt, setPrompt] = useState<TestPrompt | null>(null)
   const [promptOpen, setPromptOpen] = useState(false)
   const [promptLoading, setPromptLoading] = useState(false)
@@ -135,9 +139,25 @@ export function FunctionsPage() {
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, overflow: 'auto', borderRight: '1px solid #eee' }}>
+        <input
+          type="text"
+          placeholder="Filter..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '6px 8px',
+            border: 'none',
+            borderBottom: '1px solid #eee',
+            outline: 'none',
+            fontSize: 13,
+          }}
+        />
         <TreeView
           nodes={tree}
           selectedId={symbolId}
+          filter={filterText || undefined}
           onSelect={(id) => {
             if (!id.startsWith('file:') && !id.startsWith('lang:')) {
               navigate(`/projects/${projectId}/functions/${encodeURIComponent(id)}`)

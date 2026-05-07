@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useState, useMemo, type CSSProperties, type ReactNode } from 'react'
 
 export interface TreeNodeMarker {
   kind: 'success' | 'changed'
@@ -12,6 +12,7 @@ export interface TreeNode {
   label: ReactNode
   marker?: TreeNodeMarker
   children?: TreeNode[]
+  filterText?: string
 }
 
 const markerStyleByKind: Record<TreeNodeMarker['kind'], CSSProperties> = {
@@ -27,20 +28,55 @@ const markerStyleByKind: Record<TreeNodeMarker['kind'], CSSProperties> = {
   },
 }
 
+function fuzzyMatch(text: string, query: string): boolean {
+  if (!query) return true
+  const lowerText = text.toLowerCase()
+  const lowerQuery = query.toLowerCase()
+  let ti = 0
+  for (let qi = 0; qi < lowerQuery.length; qi++) {
+    while (ti < lowerText.length && lowerText[ti] !== lowerQuery[qi]) {
+      ti++
+    }
+    if (ti >= lowerText.length) return false
+    ti++
+  }
+  return true
+}
+
+function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  if (!query) return nodes
+  return nodes.reduce<TreeNode[]>((acc, node) => {
+    const selfMatch = fuzzyMatch(node.filterText ?? node.id, query)
+    const filteredChildren = node.children
+      ? filterTree(node.children, query)
+      : []
+
+    if (selfMatch) {
+      acc.push(node)
+    } else if (filteredChildren.length > 0) {
+      acc.push({ ...node, children: filteredChildren })
+    }
+    return acc
+  }, [])
+}
+
 function TreeItem({
   node,
   depth,
   selectedId,
   onSelect,
+  expandAll,
 }: {
   node: TreeNode
   depth: number
   selectedId?: string
   onSelect?: (id: string) => void
+  expandAll?: boolean
 }) {
   const [expanded, setExpanded] = useState(depth < 2)
   const hasChildren = (node.children?.length ?? 0) > 0
   const isSelected = selectedId === node.id
+  const effectiveExpanded = expandAll ? true : expanded
 
   return (
     <div>
@@ -70,7 +106,7 @@ function TreeItem({
         data-testid={`tree-item-${node.id}`}
       >
         <span style={{ width: 16, display: 'inline-block', textAlign: 'center' }}>
-          {hasChildren ? (expanded ? '▼' : '▶') : ' '}
+          {hasChildren ? (effectiveExpanded ? '▼' : '▶') : ' '}
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>{node.label}</span>
         {node.marker && (
@@ -96,7 +132,7 @@ function TreeItem({
           </span>
         )}
       </div>
-      {hasChildren && expanded && (
+      {hasChildren && effectiveExpanded && (
         <div>
           {node.children!.map((child) => (
             <TreeItem
@@ -105,6 +141,7 @@ function TreeItem({
               depth={depth + 1}
               selectedId={selectedId}
               onSelect={onSelect}
+              expandAll={expandAll}
             />
           ))}
         </div>
@@ -117,15 +154,30 @@ export function TreeView({
   nodes,
   selectedId,
   onSelect,
+  filter,
 }: {
   nodes: TreeNode[]
   selectedId?: string
   onSelect?: (id: string) => void
+  filter?: string
 }) {
+  const filteredNodes = useMemo(
+    () => filterTree(nodes, filter ?? ''),
+    [nodes, filter],
+  )
+  const expandAll = !!filter
+
   return (
     <div data-testid="tree-view">
-      {nodes.map((node) => (
-        <TreeItem key={node.id} node={node} depth={0} selectedId={selectedId} onSelect={onSelect} />
+      {filteredNodes.map((node) => (
+        <TreeItem
+          key={node.id}
+          node={node}
+          depth={0}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          expandAll={expandAll}
+        />
       ))}
     </div>
   )
